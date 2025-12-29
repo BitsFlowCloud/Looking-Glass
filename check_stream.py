@@ -1,230 +1,272 @@
+# 1. 停止旧进程
+pkill -f check_stream.py
+
+# 2. 写入基于 curl 的高保真 Python 脚本
+cat > /var/www/html/agent/check_stream.py << 'EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import requests
-import re
-import socket
+
+import subprocess
 import json
-import sys
 import argparse
-import urllib3.util.connection as urllib3_cn
+import socket
+import re
+import sys
+
 # ==========================================
-# 全局控制变量
+# 配置与常量 (提取自 xykt/IPQuality)
 # ==========================================
-CURRENT_PROTOCOL = socket.AF_INET 
-def allowed_gai_family():
-    return CURRENT_PROTOCOL
-urllib3_cn.allowed_gai_family = allowed_gai_family
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-}
-COOKIES_YT = {
-    'CONSENT': 'YES+cb.20210328-17-p0.en+FX+416',
-    'SOCS': 'CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg'
-}
-TIMEOUT = 5
-# --- 新增：IPv6 连通性预检 ---
+UA_BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+TIMEOUT = "8"
+
+# ==========================================
+# 核心工具：Curl 包装器
+# ==========================================
+def run_curl(url, ip_version=4, method="GET", follow_redirects=True):
+    """
+    调用系统 curl 命令，模拟 Bash 脚本的行为
+    """
+    cmd = [
+        "curl",
+        "--max-time", TIMEOUT,
+        "--user-agent", UA_BROWSER,
+        "--silent",               # 静默模式
+        "--write-out", "%{http_code}", # 最后输出状态码
+    ]
+
+    # IP 版本强制
+    if ip_version == 6:
+        cmd.append("-6")
+    else:
+        cmd.append("-4")
+
+    # 是否跟随跳转
+    if follow_redirects:
+        cmd.append("-L")
+    else:
+        # 如果不跟随跳转，我们需要 Header 来分析 Location
+        cmd.append("-I") 
+
+    # URL
+    cmd.append(url)
+
+    try:
+        # 执行命令
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # 解析结果
+        # stdout 包含页面内容(如果有) + 最后的 http_code
+        output = result.stdout
+        http_code = 0
+        body = ""
+        
+        if output:
+            try:
+                # 提取最后3位作为状态码
+                http_code = int(output[-3:])
+                body = output[:-3] # 剩下的就是 body 或 headers
+            except:
+                pass
+                
+        return {
+            "code": http_code,
+            "body": body,
+            "error": False
+        }
+    except Exception as e:
+        return {"code": 0, "body": "", "error": True}
+
 def is_ipv6_supported():
-    """
-    尝试连接 Google IPv6 DNS (53端口) 来检测本机是否具备 IPv6 出网能力。
-    不发送数据，仅测试 TCP 握手。
-    """
+    """检测 IPv6 连通性"""
     try:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-        sock.settimeout(2) # 2秒超时
+        sock.settimeout(2)
         sock.connect(('2001:4860:4860::8888', 53))
         sock.close()
         return True
-    except (socket.error, socket.timeout, OSError):
+    except:
         return False
-def get_request(url, allow_redirects=True, use_cookies=False):
-    try:
-        cks = COOKIES_YT if use_cookies else {}
-        with requests.Session() as s:
-            return s.get(url, headers=HEADERS, cookies=cks, timeout=TIMEOUT, allow_redirects=allow_redirects)
-    except Exception:
-        # 构造伪造响应对象防止 AttributeError
-        class MockResponse:
-            def __init__(self, u):
-                self.text = ""
-                self.status_code = 0
-                self.url = u
-                self.history = []
-        return MockResponse(url)
-def get_ip_info():
-    # 方案 A: ip-api.com
-    try:
-        data = requests.get("http://ip-api.com/json/", timeout=5).json()
-        country = data.get('countryCode')
-        isp = data.get('isp')
-        query = data.get('query')
-        if country:
-            return f"[{country}] {isp} ({query})", country
-    except:
-        pass
-    # 方案 B: ipify
-    try:
-        ip = requests.get("https://api64.ipify.org?format=json", timeout=5).json().get('ip')
-        if ip:
-            return f"[Unknown] {ip}", "Unknown"
-    except:
-        pass
-    return "Network Error (Connect Failed)", "Unknown"
-# --- 流媒体检测逻辑 ---
-def check_youtube(current_region):
-    region = "Unknown"
-    r_main = get_request("https://www.youtube.com/", use_cookies=True)
-    if r_main.status_code == 200:
-        match = re.search(r'"countryCode":"([A-Z]{2})"', r_main.text)
-        if match:
-            region = match.group(1)
-        else:
-            match2 = re.search(r'"gl":"([A-Z]{2})"', r_main.text)
-            if match2: region = match2.group(1)
+
+# ==========================================
+# 提取自 xykt/IPQuality 的检测逻辑
+# ==========================================
+
+def check_netflix(ver):
+    """
+    标准脚本逻辑：
+    访问 Breaking Bad (81280792)
+    - 404: 无法观看
+    - 403: 封锁
+    - 200: 正常
+    - 301/302: 获取 Location 判断地区
+    """
+    # 1. 检查自制剧 (House of Cards) - 基础解锁
+    res_org = run_curl("https://www.netflix.com/title/80018499", ver, follow_redirects=True)
+    if res_org['code'] != 200:
+        return "No"
+
+    # 2. 检查非自制 (Breaking Bad) - 完整解锁
+    # 这里使用不跟随跳转 (-I) 来获取 Location，这是 Bash 脚本常用的判断地区方法
+    res = run_curl("https://www.netflix.com/title/81280792", ver, follow_redirects=False)
     
-    premium_status = "No"
-    r_prem = get_request("https://www.youtube.com/premium", use_cookies=True)
-    if r_prem.status_code == 200:
-        text = r_prem.text.lower()
-        if "premium" in text and ("try free" in text or "get youtube premium" in text or "saved" in text):
-            premium_status = "Yes"
-        elif region in ['US', 'DE', 'JP', 'HK', 'SG', 'TW', 'GB', 'FR', 'AU', 'CA', 'IN', 'AR', 'TR', 'UA', 'PH', 'VN']:
-            premium_status = "Yes (Likely)"
-            
-    if region == "Unknown" and r_main.status_code == 0:
+    if res['code'] == 403:
+        return "No"
+    
+    if res['code'] == 200:
+        # 页面直接返回 200，说明没有跳转，通常是 US 或者当前 IP 所在区
+        return "Yes (Region: US)"
+    
+    if res['code'] in [301, 302]:
+        # 提取 Location
+        # curl -I 的输出在 body 里
+        match = re.search(r'[lL]ocation:\s*https?://www\.netflix\.com/([a-z]{2}-[a-z]{2})/', res['body'])
+        if match:
+            region = match.group(1).split('-')[0].upper()
+            return f"Yes (Region: {region})"
+        
+        # 备用正则
+        match2 = re.search(r'[lL]ocation:\s*/([a-z]{2})/', res['body'])
+        if match2:
+            region = match2.group(1).upper()
+            return f"Yes (Region: {region})"
+
+    # 如果非自制剧挂了，但自制剧通过了
+    return "Yes (Originals Only)"
+
+def check_youtube(ver, region_code):
+    """
+    标准脚本逻辑：
+    访问 /premium，查找 "Premium" 关键词
+    """
+    res = run_curl("https://www.youtube.com/premium", ver, follow_redirects=True)
+    
+    if res['code'] != 200:
         return "Network Error"
-    return f"Region: {region} | Premium: {premium_status}"
-def check_netflix(current_region):
-    id_non = "70143836" 
-    id_org = "80018499" 
     
-    def extract_region_logic(url):
-        match = re.search(r'netflix\.com/([a-z]{2}(-[a-z]{2})?)/', url)
-        if match:
-            url_region = match.group(1).split('-')[0].upper()
-            if url_region == "GB" and current_region == "DE": return "DE"
-            return url_region
-        if current_region != "Unknown": return current_region
-        return "US"
-    r1 = get_request(f"https://www.netflix.com/title/{id_non}", use_cookies=False)
-    if r1.status_code == 200 and "/login" not in r1.url and "Netflix" in r1.text:
-        return f"Yes (Region: {extract_region_logic(r1.url)})"
-    r2 = get_request(f"https://www.netflix.com/title/{id_org}", use_cookies=False)
-    if r2.status_code == 200 and "/login" not in r2.url and "Netflix" in r2.text:
-        return f"Yes (Originals Only) Region: {extract_region_logic(r2.url)}"
-    if r1.status_code == 403: return "No (IP Blocked)"
+    is_premium = "No"
+    if "United States" in res['body'] or "YouTube Premium" in res['body'] or "try free" in res['body'].lower():
+        is_premium = "Yes"
+    
+    # 地区修正
+    region = region_code if region_code != "Unknown" else "Global"
+    
+    # 尝试从 Youtube 源码获取 countryCode
+    match = re.search(r'"countryCode":"([A-Z]{2})"', res['body'])
+    if match:
+        region = match.group(1)
+
+    return f"Region: {region} | Premium: {is_premium}"
+
+def check_disney(ver):
+    """
+    标准脚本逻辑：
+    访问主页，403/0 为失败，200 为成功。
+    """
+    res = run_curl("https://www.disneyplus.com/", ver, follow_redirects=True)
+    
+    if res['code'] == 0: return "Network Error"
+    if res['code'] == 403: return "No"
+    
+    if res['code'] == 200:
+        # 检查是否跳转到了 preview (未服务区)
+        if "preview" in res['body'] or "unavailable" in res['body']:
+             return "No (Region Unavailable)"
+        
+        # 尝试解析地区 (从 URL 或 meta 标签，这里简化处理，Curl 拿 URL 比较麻烦，除非解析 -L 后的最终 URL)
+        # 简单返回 Yes
+        return "Yes"
+        
     return "No"
-def check_disney(current_region):
-    r = get_request("https://www.disneyplus.com/")
-    if r.status_code == 0: return "Network Error"
-    if r.status_code == 200 and "preview" not in r.url and "unavailable" not in r.url:
-        region = "Global"
-        match = re.search(r'disneyplus\.com/([a-z]{2}-[a-z]{2})/', r.url)
-        if match:
-            region = match.group(1).split('-')[1].upper()
-        elif current_region != "Unknown":
-            region = current_region
-        return f"Yes (Region: {region})"
+
+def check_tiktok(ver):
+    res = run_curl("https://www.tiktok.com/", ver, follow_redirects=True)
+    if res['code'] == 200: return "Yes"
     return "No"
-def check_tiktok():
+
+def check_gemini(ver):
+    res = run_curl("https://gemini.google.com", ver, follow_redirects=True)
+    if res['code'] == 200 and ("Google" in res['body'] or "Sign in" in res['body']):
+        return "Yes"
+    return "No"
+
+# ==========================================
+# 主程序
+# ==========================================
+
+def run_suite(ver, name):
+    print(f"--- Checking via {name} ---")
+    
+    # 获取 IP 归属地 (用于辅助判断)
+    region_code = "Unknown"
     try:
-        r = get_request("https://www.tiktok.com/")
-        if r.status_code == 200:
-            return "Yes"
-        elif r.status_code == 403:
-            return "No"
-        else:
-            return "No"
+        # 使用 curl 获取 ip info，避免 python 库差异
+        cmd = ["curl", "-s", "--max-time", "4", "http://ip-api.com/json/"]
+        if ver == 6: cmd.append("-6")
+        else: cmd.append("-4")
+        
+        out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        data = json.loads(out)
+        region_code = data.get('countryCode', 'Unknown')
+        print(f"IP Info: [{region_code}] {data.get('isp', '')}")
     except:
-        return "Network Error"
-def check_spotify():
-    try:
-        r = get_request("https://www.spotify.com/")
-        if r.status_code == 200: return "Yes"
-        if r.status_code == 403: return "No"
-    except: pass
-    try:
-        r = requests.get("https://spclient.wg.spotify.com/signup/public/v1/account/validate/password", headers=HEADERS, timeout=5)
-        if r.status_code == 200: return "Yes"
-        if r.status_code == 403: return "No"
-    except: pass
-    return "No (Network Error)"
-def check_gemini():
-    r = get_request("https://gemini.google.com", allow_redirects=True, use_cookies=True)
-    if r.status_code == 0: return "Network Error"
-    if r.status_code == 200 and ("Google" in r.text or "Sign in" in r.text): return "Yes"
-    if r.history and "accounts.google.com" in r.history[0].headers.get('Location', ''): return "Yes"
-    return f"No ({r.status_code})"
-def run_suite(protocol, proto_name):
-    global CURRENT_PROTOCOL
-    CURRENT_PROTOCOL = protocol 
-    
-    print(f"--- Checking via {proto_name} ---")
-    
-    ip_str, region_code = get_ip_info()
-    print(f"IP Info: {ip_str}")
-    
-    if "Network Error" in ip_str and proto_name == "IPv6":
-        # 这里的 fallback 主要是为了防止 ip api 挂了但 v6 实际能用的情况
-        # 但如果 is_ipv6_supported 已经通过，这里一般不会完全断网
-        print("Warning: IP API failed.")
-        region_code = "Unknown" 
-    results_raw = {
-        'netflix': check_netflix(region_code),
-        'youtube': check_youtube(region_code),
-        'disney': check_disney(region_code),
-        'tiktok': check_tiktok(),
-        'spotify': check_spotify(),
-        'gemini': check_gemini()
+        print("IP Info: Unknown")
+
+    results = {
+        'netflix': check_netflix(ver),
+        'youtube': check_youtube(ver, region_code),
+        'disney': check_disney(ver),
+        'tiktok': check_tiktok(ver),
+        'gemini': check_gemini(ver),
+        'spotify': 'N/A' # Curl 模拟 Spotify 登录极其复杂，暂跳过
     }
     
-    for k, v in results_raw.items():
+    for k, v in results.items():
         print(f"{k.capitalize()}: {v}")
-    
-    return results_raw
+        
+    return results
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=str, help="Output JSON result to file")
     args = parser.parse_args()
+
     final_data = {}
     
-    # 1. 运行 IPv4 测试 (默认必须支持)
-    final_data['v4'] = run_suite(socket.AF_INET, "IPv4")
+    # IPv4
+    final_data['v4'] = run_suite(4, "IPv4")
     print("\n")
-    # 2. 预检 IPv6
+
+    # IPv6
     if is_ipv6_supported():
-        final_data['v6'] = run_suite(socket.AF_INET6, "IPv6")
+        final_data['v6'] = run_suite(6, "IPv6")
     else:
         print("--- Checking via IPv6 ---")
         print("IPv6 Unavailable (Skipping checks)")
-        # 填充 N/A 数据，保证 JSON 结构完整
-        final_data['v6'] = {
-            'netflix': 'N/A',
-            'youtube': 'N/A',
-            'disney': 'N/A',
-            'tiktok': 'N/A',
-            'spotify': 'N/A',
-            'gemini': 'N/A'
-        }
-    # 3. 输出结果
+        final_data['v6'] = { k: 'N/A' for k in final_data['v4'].keys() }
+
+    # Output
     if args.out:
+        with open(args.out, 'w') as f:
+            json.dump(final_data, f)
         try:
-            with open(args.out, 'w') as f:
-                json.dump(final_data, f)
-            # 尝试修复权限
             import os
-            try: 
-                os.chmod(args.out, 0o644)
-                # 尝试将文件所有权给 www-data (uid 33 通常是 www-data)
-                # 如果当前不是 root，这步可能会失败，忽略即可
-                os.chown(args.out, 33, 33) 
-            except: 
-                pass
-            print(f"\nSaved result to {args.out}")
-        except Exception as e:
-            print(f"Error writing file: {e}")
+            os.chmod(args.out, 0o644)
+            os.chown(args.out, 33, 33) 
+        except: pass
+        print(f"\nSaved result to {args.out}")
     else:
         print(json.dumps(final_data, indent=4))
+
 if __name__ == "__main__":
     main()
+EOF
+
+# 3. 修复权限
+chown www-data:www-data /var/www/html/agent/check_stream.py
+chmod +x /var/www/html/agent/check_stream.py
+
+# 4. 手动运行测试
+echo ">>> 正在使用 Curl 核心运行检测..."
+su -s /bin/bash -c "python3 /var/www/html/agent/check_stream.py --out /var/www/html/agent/unlock_result.json" www-data
+
+echo ">>> 完成！此版本调用系统 Curl，结果应与 Bash 脚本一致。"

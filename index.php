@@ -1,17 +1,17 @@
 <?php 
-// 加载配置文件，如果不存在则使用默认值防止报错
+// 1. 加载配置文件
 $config = [];
 if (file_exists('config.php')) {
     $config = require 'config.php';
 }
 
-// 提取配置变量，提供默认回退
-$siteTitle = $config['site_title'] ?? 'Looking Glass';
-$siteHeader = $config['site_header'] ?? 'LOOKING GLASS'; // 这里控制那个特效大字
-$footerText = $config['footer_text'] ?? '&copy; Looking Glass Project';
-$cfSiteKey = $config['cf_site_key'] ?? '';
+// 2. 定义变量 (默认值使用你提供的原始HTML中的值)
+$siteTitle = $config['site_title'] ?? 'BitsFlowCloud Looking Glass';
+$siteHeader = $config['site_header'] ?? 'BitsFlowCloud Looking Glass';
+$footerText = $config['footer_text'] ?? '&copy; 2023-2025 BitsFlowCloud Network. All Rights Reserved.';
+$cfSiteKey = $config['cf_site_key'] ?? '0x4AAAAAACJhmoIhycq-YD13';
 
-// 辅助函数：安全输出 HTML
+// 3. 安全输出函数
 function e($str) {
     return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
 }
@@ -29,8 +29,8 @@ function e($str) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background-color: var(--bg-color); color: var(--text-main); font-family: 'JetBrains Mono', monospace; min-height: 100vh; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; position: relative; user-select: none; }
         #bgCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        
         .header { margin-top: 3rem; margin-bottom: 2rem; text-align: center; position: relative; z-index: 2; }
-        /* Glitch Effect CSS */
         .glitch-title { font-family: 'Share Tech Mono', monospace; font-size: 4rem; font-weight: bold; text-transform: uppercase; color: #fff; position: relative; letter-spacing: 4px; text-shadow: 2px 2px 0px var(--cyan); animation: glitch-skew 3s infinite linear alternate-reverse; }
         .glitch-title::before, .glitch-title::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         .glitch-title::before { left: 2px; text-shadow: -1px 0 var(--purple); clip: rect(44px, 450px, 56px, 0); animation: glitch-anim 5s infinite linear alternate-reverse; }
@@ -41,18 +41,47 @@ function e($str) {
         
         .region-selector { margin-bottom: 2rem; position: relative; z-index: 20; width: 450px; display: flex; flex-direction: column; gap: 10px; }
         .custom-select { position: relative; font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; }
-        .select-selected { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; padding: 15px 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; border-radius: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+        
+        .select-selected { 
+            background: rgba(255, 255, 255, 0.05); 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+            color: #fff; 
+            padding: 15px 20px; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            transition: 0.3s; 
+            border-radius: 12px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            position: relative; 
+        }
         .select-selected:hover { background: rgba(0, 243, 255, 0.1); border-color: rgba(0, 243, 255, 0.3); }
-        .select-selected::after { content: ""; border: 6px solid transparent; border-color: #fff transparent transparent transparent; opacity: 0.7; position: absolute; right: 20px; top: 50%; transform: translateY(-25%); }
+        
+        .select-selected::after { 
+            content: ""; 
+            border: 6px solid transparent; 
+            border-color: #fff transparent transparent transparent; 
+            opacity: 0.7; 
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-25%);
+        }
         .select-selected.select-arrow-active::after { border-color: transparent transparent #fff transparent; transform: translateY(-75%); }
+        
         .select-items { position: absolute; background-color: #111; border: 1px solid rgba(255,255,255,0.1); top: 100%; left: 0; right: 0; z-index: 99; margin-top: 8px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .select-hide { display: none; }
         .select-item { padding: 18px 25px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: #ccc; transition: all 0.3s ease; white-space: nowrap; border-left: 4px solid transparent; overflow: hidden; text-overflow: ellipsis; }
         .select-item:last-child { border-bottom: none; }
         .select-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .flag-icon { width: 24px; height: 18px; margin-right: 15px; vertical-align: middle; border-radius: 4px; box-shadow: 0 0 5px rgba(0,0,0,0.5); flex-shrink: 0; }
+        
         .main-container { width: 95%; max-width: 1600px; display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 30px; position: relative; z-index: 5; }
         @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } }
+        
         .glass-card { border-radius: 20px; padding: 25px; position: relative; display: flex; flex-direction: column; min-width: 0; width: 100%; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: transform 0.3s ease; }
         .glass-card:hover { transform: translateY(-3px); }
         .glass-card.card-v4 { background: rgba(0, 243, 255, 0.06); }
@@ -61,26 +90,40 @@ function e($str) {
         .glass-card.card-v6 .card-title { color: var(--purple); border-bottom: 1px solid rgba(188,19,254,0.2); }
         .glass-card.card-v6 .ip-action-box { color: var(--purple); background: rgba(188,19,254,0.1); border-color: rgba(188,19,254,0.2); }
         .glass-card.card-v6 .ip-action-box:hover { background: rgba(188,19,254,0.2); }
+        
         .card-title { font-size: 1.2rem; margin-bottom: 20px; font-weight: bold; padding-bottom: 10px; letter-spacing: 1px; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
         .btn-file-test { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; text-transform: uppercase; font-weight: 800; transition: all 0.2s; color: #000; box-shadow: 0 0 10px rgba(0,0,0,0.5); line-height: 1; }
         .btn-file-test:hover { transform: scale(1.05); filter: brightness(1.2); }
         .btn-file-test:disabled { background: #333 !important; color: #666 !important; cursor: not-allowed; box-shadow: none; }
         .card-v4 .btn-file-test { background: var(--cyan); box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
         .card-v6 .btn-file-test { background: var(--purple); box-shadow: 0 0 15px rgba(188, 19, 254, 0.3); }
+        
         .ip-action-box { background: rgba(0, 243, 255, 0.1); border: 1px solid rgba(0, 243, 255, 0.2); padding: 15px; text-align: center; font-size: 1.1rem; color: var(--cyan); cursor: pointer; border-radius: 12px; transition: all 0.2s ease; margin-bottom: 20px; font-weight: bold; }
         .ip-action-box:hover { background: rgba(0, 243, 255, 0.2); transform: scale(1.02); }
         .ip-action-box::after { content: 'CLICK TO TEST'; display: block; font-size: 0.6rem; color: rgba(255,255,255,0.6); margin-top: 6px; letter-spacing: 2px; }
+        
         .terminal-output { background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); color: #ddd; padding: 15px; font-size: 0.8rem; height: 380px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; margin-bottom: 15px; border-radius: 12px; white-space: pre-wrap; word-break: break-all; width: 100%; }
         @media (max-width: 600px) { .terminal-output { height: 250px; } }
-        .unlock-header { font-size: 0.75rem; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; text-align: center; font-weight: bold; }
+
+        .unlock-header { 
+            font-size: 0.75rem; 
+            color: #666; 
+            margin-bottom: 8px; 
+            text-transform: uppercase; 
+            letter-spacing: 1px; 
+            text-align: center; 
+            font-weight: bold; 
+        }
         .card-v4 .unlock-header { color: rgba(0,243,255,0.7); }
         .card-v6 .unlock-header { color: rgba(188,19,254,0.7); }
+
         .unlock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.8rem; margin-top: auto; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
         .unlock-item { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 10px 15px; border-radius: 8px; border: none; }
         .info-key { color: #fff; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px; }
         .card-v4 .status-yes { color: var(--green); opacity: 1; font-weight: bold; }
         .card-v6 .status-yes { color: var(--pink); opacity: 1; font-weight: bold; }
         .status-no { color: #555; font-size: 0.75rem; font-weight: bold; }
+        
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
         .modal { background: var(--modal-bg); border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 50px rgba(0,0,0,0.8); padding: 40px; border-radius: 24px; width: 550px; position: relative; max-width: 95%; text-align: center; animation: modalFadeIn 0.2s ease-out; }
         @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
@@ -103,7 +146,6 @@ function e($str) {
     <canvas id="bgCanvas"></canvas>
 
     <div class="header">
-        <!-- 这里是动态配置的大标题，带故障特效 -->
         <div class="glitch-title" data-text="<?php echo e($siteHeader); ?>"><?php echo e($siteHeader); ?></div>
         <div style="font-size: 0.9rem; color: var(--cyan); margin-top: 10px; letter-spacing: 3px; opacity: 0.7;">NETWORK DIAGNOSTIC TOOL</div>
     </div>
@@ -127,6 +169,7 @@ function e($str) {
             <div class="ip-action-box" onclick="openActionModal('IPv4')"><span id="ipv4-addr">--</span></div>
             <div class="terminal-output" id="term-v4">[Waiting for Node Selection...]</div>
             
+            <!-- 流媒体标题 -->
             <div class="unlock-header">Streaming Services & AI Unlock Monitor (30m Auto-update)</div>
             <div class="unlock-grid" id="unlock-list-v4"></div>
         </div>
@@ -140,6 +183,7 @@ function e($str) {
             <div class="ip-action-box" onclick="openActionModal('IPv6')"><span id="ipv6-addr">--</span></div>
             <div class="terminal-output" id="term-v6">[Waiting for Node Selection...]</div>
             
+            <!-- 流媒体标题 -->
             <div class="unlock-header">Streaming Services & AI Unlock Monitor (30m Auto-update)</div>
             <div class="unlock-grid" id="unlock-list-v6"></div>
         </div>
@@ -188,9 +232,6 @@ function e($str) {
     </div>
 
     <script>
-        // Inject Cloudflare Site Key via PHP
-        const CF_SITE_KEY = '<?php echo e($cfSiteKey); ?>';
-        
         const canvas = document.getElementById('bgCanvas'); const ctx = canvas.getContext('2d');
         let width, height; let particles = [];
         function initCanvas() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; particles = []; for(let i=0; i<100; i++) particles.push({ x: Math.random()*width, y: Math.random()*height, z: Math.random()*2+0.5, size: Math.random()*2 }); }
@@ -272,7 +313,9 @@ function e($str) {
             const services = ['Netflix', 'YouTube', 'Disney+', 'TikTok', 'Spotify', 'Gemini'];
             services.forEach(s => { 
                 const key = s.toLowerCase().replace('+','');
+                
                 let resultText = unlockData && unlockData[key] ? unlockData[key] : "No";
+                
                 let isUnlocked = false; 
                 let displayText = "NO";
                 let statusClass = "status-no";
@@ -281,11 +324,13 @@ function e($str) {
                     isUnlocked = true;
                     statusClass = "status-yes";
                     displayText = "YES";
+                    
                     const regionMatch = resultText.match(/Region:\s*([A-Za-z]{2})/i);
                     if (regionMatch) {
                         displayText += ` [${regionMatch[1].toUpperCase()}]`;
                     }
                 }
+
                 html += `<div class="unlock-item"><span class="info-key">${s}</span><span class="${statusClass}">${displayText}</span></div>`; 
             });
             container.innerHTML = html;
@@ -393,7 +438,7 @@ function e($str) {
             document.getElementById('cf-status').style.color = "#888";
             if (turnstileWidgetId === null) {
                 turnstileWidgetId = turnstile.render('#cf-widget-container', {
-                    sitekey: CF_SITE_KEY, 
+                    sitekey: '<?php echo e($cfSiteKey); ?>', 
                     theme: 'light',
                     callback: function(token) { onTurnstileSuccess(token); },
                     'expired-callback': function() { document.getElementById('cf-status').innerText = "Check expired. Please click again."; }

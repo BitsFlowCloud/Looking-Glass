@@ -1,8 +1,3 @@
-# 1. 停止旧进程
-pkill -f check_stream.py
-
-# 2. 写入基于 curl 的高保真 Python 脚本
-cat > /var/www/html/agent/check_stream.py << 'EOF'
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -259,14 +254,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-EOF
-
-# 3. 修复权限
-chown www-data:www-data /var/www/html/agent/check_stream.py
-chmod +x /var/www/html/agent/check_stream.py
-
-# 4. 手动运行测试
-echo ">>> 正在使用 Curl 核心运行检测..."
-su -s /bin/bash -c "python3 /var/www/html/agent/check_stream.py --out /var/www/html/agent/unlock_result.json" www-data
-
-echo ">>> 完成！此版本调用系统 Curl，结果应与 Bash 脚本一致。"

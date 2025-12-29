@@ -11,17 +11,16 @@ NC='\033[0m' # No Color
 # ==========================================
 DEFAULT_DIR="/root/www/wwwroot/lg-master"
 DEFAULT_TITLE="My Looking Glass"
-# Cloudflare 测试用 Key (仅用于演示，生产环境需替换)
-DEFAULT_CF_KEY="0x4AAAAAACJhmoIhycq-YD13" 
+# 为了配合 Nginx 反代，建议 PHP 跑在本地高位端口
 DEFAULT_PORT=8080
 
-# 配置文件路径 (用于保存用户的设置)
+# 配置文件路径
 SETTINGS_FILE="/root/.lg_master_settings"
 PID_FILE="/tmp/lg-master.pid"
 LOG_FILE="/tmp/lg-master.log"
 
 echo -e "${GREEN}=============================================${NC}"
-echo -e "${GREEN}   BitsFlowCloud Looking Glass - 主控端管理   ${NC}"
+echo -e "${GREEN}   BitsFlowCloud Looking Glass - 主控端 (SSL版) ${NC}"
 echo -e "${GREEN}=============================================${NC}"
 
 # ==========================================
@@ -45,10 +44,10 @@ function check_env() {
 }
 
 # ==========================================
-# 1. 交互式配置向导 (核心新增功能)
+# 1. 交互式配置向导
 # ==========================================
 function configure_install() {
-    echo -e "${YELLOW}>>> 进入配置向导 (回车使用默认值)${NC}"
+    echo -e "${YELLOW}>>> 进入配置向导${NC}"
 
     # 1. 安装目录
     read -p "1. 安装目录 [$DEFAULT_DIR]: " INPUT_DIR
@@ -59,28 +58,38 @@ function configure_install() {
     SITE_TITLE=${INPUT_TITLE:-$DEFAULT_TITLE}
 
     # 3. Cloudflare Turnstile Site Key
-    echo -e "   (去 dash.cloudflare.com 申请 Turnstile)"
-    read -p "3. CF Turnstile Site Key [$DEFAULT_CF_KEY]: " INPUT_CF
-    CF_SITE_KEY=${INPUT_CF:-$DEFAULT_CF_KEY}
+    echo -e "   -------------------------------------------------------"
+    echo -e "   请前往 https://dash.cloudflare.com/ 申请 Turnstile 验证"
+    echo -e "   注意: 这里只需要填写公开的 [Site Key]"
+    echo -e "   -------------------------------------------------------"
+    while true; do
+        read -p "3. 请输入 CF Turnstile Site Key: " INPUT_CF
+        if [ -n "$INPUT_CF" ]; then
+            CF_SITE_KEY="$INPUT_CF"
+            break
+        else
+            echo -e "${RED}错误: Site Key 不能为空。${NC}"
+        fi
+    done
 
     # 4. 运行端口
-    read -p "4. 服务运行端口 [$DEFAULT_PORT]: " INPUT_PORT
+    echo -e "   注意: 如果您打算启用 SSL，这里请保持默认 8080 (作为后端端口)"
+    read -p "4. PHP后端运行端口 [$DEFAULT_PORT]: " INPUT_PORT
     SERVER_PORT=${INPUT_PORT:-$DEFAULT_PORT}
 
-    # 保存配置供后续使用
+    # 保存配置
     echo "WEB_ROOT=\"$WEB_ROOT\"" > "$SETTINGS_FILE"
     echo "SERVER_PORT=\"$SERVER_PORT\"" >> "$SETTINGS_FILE"
+    echo "SITE_TITLE=\"$SITE_TITLE\"" >> "$SETTINGS_FILE"
+    echo "CF_SITE_KEY=\"$CF_SITE_KEY\"" >> "$SETTINGS_FILE"
     
     echo -e "${GREEN}配置已保存！${NC}"
-    echo -e "目录: $WEB_ROOT | 端口: $SERVER_PORT"
-    echo -e "标题: $SITE_TITLE"
 }
 
 # ==========================================
-# 2. 核心文件部署 (带变量注入)
+# 2. 核心文件部署
 # ==========================================
 function install_files() {
-    # 如果没有配置过，先运行配置
     if [ ! -f "$SETTINGS_FILE" ]; then configure_install; fi
     source "$SETTINGS_FILE"
 
@@ -89,7 +98,6 @@ function install_files() {
     echo -e "${YELLOW}正在生成文件...${NC}"
 
     # --- 生成 config.php ---
-    # 如果不存在才生成，防止覆盖节点信息
     CONFIG_FILE="$WEB_ROOT/config.php"
     if [ ! -f "$CONFIG_FILE" ]; then
         cat << EOF > "$CONFIG_FILE"
@@ -102,13 +110,10 @@ return [
 ];
 EOF
     else
-        # 如果存在，只更新标题
         sed -i "s/'site_title' => .*/'site_title' => '$SITE_TITLE',/" "$CONFIG_FILE"
     fi
 
-    # --- 生成 index.php (注入 Site Key 和 Title) ---
-    # 注意：这里使用 EOF (不带单引号) 允许变量展开
-    # PHP 变量需要转义 \$
+    # --- 生成 index.php ---
     cat << EOF > "$WEB_ROOT/index.php"
 <?php \$config = require 'config.php'; ?>
 <!DOCTYPE html>
@@ -132,7 +137,6 @@ EOF
         @keyframes glitch-anim { 0% { clip: rect(31px, 9999px, 91px, 0); } 20% { clip: rect(6px, 9999px, 86px, 0); } 40% { clip: rect(68px, 9999px, 11px, 0); } 100% { clip: rect(82px, 9999px, 2px, 0); } }
         @keyframes glitch-anim2 { 0% { clip: rect(81px, 9999px, 9px, 0); } 20% { clip: rect(7px, 9999px, 88px, 0); } 40% { clip: rect(18px, 9999px, 31px, 0); } 100% { clip: rect(32px, 9999px, 52px, 0); } }
         @keyframes glitch-skew { 0% { transform: skew(0deg); } 10% { transform: skew(-1deg); } 20% { transform: skew(1deg); } 100% { transform: skew(0deg); } }
-        
         .region-selector { margin-bottom: 2rem; position: relative; z-index: 20; width: 450px; display: flex; flex-direction: column; gap: 10px; }
         .custom-select { position: relative; font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; }
         .select-selected { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; padding: 15px 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; border-radius: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
@@ -145,10 +149,8 @@ EOF
         .select-item:last-child { border-bottom: none; }
         .select-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .flag-icon { width: 24px; height: 18px; margin-right: 15px; vertical-align: middle; border-radius: 4px; box-shadow: 0 0 5px rgba(0,0,0,0.5); flex-shrink: 0; }
-        
         .main-container { width: 95%; max-width: 1600px; display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 30px; position: relative; z-index: 5; }
         @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } }
-        
         .glass-card { border-radius: 20px; padding: 25px; position: relative; display: flex; flex-direction: column; min-width: 0; width: 100%; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: transform 0.3s ease; }
         .glass-card:hover { transform: translateY(-3px); }
         .glass-card.card-v4 { background: rgba(0, 243, 255, 0.06); }
@@ -648,56 +650,127 @@ function manage_service() {
     
     echo ""
     echo "--- 主控端服务管理 ---"
-    echo "1. 启动服务 (Start)"
-    echo "2. 停止服务 (Stop)"
-    echo "3. 重启服务 (Restart)"
+    echo "1. 启动 PHP 后端服务 (Start)"
+    echo "2. 停止 PHP 后端服务 (Stop)"
+    echo "3. 重启 PHP 后端服务 (Restart)"
     echo "4. 查看状态 (Status)"
-    echo "5. 返回主菜单"
+    echo "5. 配置 SSL (HTTPS) - 推荐"
+    echo "6. 返回主菜单"
     read -p "请选择: " svc_choice
 
     case $svc_choice in
         1)
             if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
-                echo -e "${YELLOW}服务已在运行 (PID: $(cat $PID_FILE))${NC}"
+                echo -e "${YELLOW}PHP 服务已在运行 (PID: $(cat $PID_FILE))${NC}"
             else
-                # 检查端口是否被占用
                 if netstat -tuln | grep ":$SERVER_PORT " > /dev/null; then
                      echo -e "${RED}端口 $SERVER_PORT 已被占用！无法启动。${NC}"
                      return
                 fi
                 # 启动 PHP 内置服务器
-                nohup php -S 0.0.0.0:$SERVER_PORT -t "$WEB_ROOT" > "$LOG_FILE" 2>&1 &
+                nohup php -S 127.0.0.1:$SERVER_PORT -t "$WEB_ROOT" > "$LOG_FILE" 2>&1 &
                 echo $! > "$PID_FILE"
-                echo -e "${GREEN}服务已启动! 访问地址: http://YOUR_IP:$SERVER_PORT${NC}"
+                echo -e "${GREEN}PHP 后端已启动! (监听 127.0.0.1:$SERVER_PORT)${NC}"
             fi
             ;;
         2)
             if [ -f "$PID_FILE" ]; then
                 kill $(cat "$PID_FILE") 2>/dev/null
                 rm "$PID_FILE"
-                echo -e "${GREEN}服务已停止。${NC}"
+                echo -e "${GREEN}PHP 服务已停止。${NC}"
             else
                 echo -e "${RED}服务未运行。${NC}"
             fi
             ;;
         3)
-            # 重启
             if [ -f "$PID_FILE" ]; then kill $(cat "$PID_FILE") 2>/dev/null; rm "$PID_FILE"; fi
-            nohup php -S 0.0.0.0:$SERVER_PORT -t "$WEB_ROOT" > "$LOG_FILE" 2>&1 &
+            nohup php -S 127.0.0.1:$SERVER_PORT -t "$WEB_ROOT" > "$LOG_FILE" 2>&1 &
             echo $! > "$PID_FILE"
-            echo -e "${GREEN}服务已重启!${NC}"
+            echo -e "${GREEN}PHP 服务已重启!${NC}"
             ;;
         4)
             if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
-                echo -e "${GREEN}状态: 运行中 (PID: $(cat $PID_FILE))${NC}"
-                echo -e "日志最后10行:"
-                tail -n 10 "$LOG_FILE"
+                echo -e "${GREEN}PHP 状态: 运行中 (PID: $(cat $PID_FILE))${NC}"
             else
-                echo -e "${RED}状态: 未运行${NC}"
+                echo -e "${RED}PHP 状态: 未运行${NC}"
             fi
+            ;;
+        5)
+            configure_ssl
             ;;
         *) return ;;
     esac
+}
+
+# ==========================================
+# 5. SSL 配置 (Nginx + Certbot)
+# ==========================================
+function configure_ssl() {
+    if [ ! -f "$SETTINGS_FILE" ]; then configure_install; fi
+    source "$SETTINGS_FILE"
+
+    echo -e "${YELLOW}>>> 开始配置 SSL (使用 Let's Encrypt)${NC}"
+    echo -e "${YELLOW}注意: 此操作将安装 Nginx 并占用 80/443 端口。${NC}"
+    echo -e "${YELLOW}请确保您的域名 ($SITE_TITLE 对应的域名) 已解析到本机 IP！${NC}"
+    
+    read -p "请输入您的域名 (例如 lg.example.com): " SSL_DOMAIN
+    read -p "请输入您的邮箱 (用于证书通知): " SSL_EMAIL
+    
+    if [ -z "$SSL_DOMAIN" ] || [ -z "$SSL_EMAIL" ]; then
+        echo -e "${RED}域名或邮箱不能为空！${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}正在安装 Nginx 和 Certbot...${NC}"
+    if [ -f /etc/debian_version ]; then
+        apt-get update
+        apt-get install -y nginx python3-certbot-nginx
+    elif [ -f /etc/redhat-release ]; then
+        yum install -y nginx python3-certbot-nginx
+    fi
+
+    # 确保 PHP 后端在运行
+    if [ ! -f "$PID_FILE" ] || ! kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+        echo -e "${YELLOW}正在启动 PHP 后端...${NC}"
+        nohup php -S 127.0.0.1:$SERVER_PORT -t "$WEB_ROOT" > "$LOG_FILE" 2>&1 &
+        echo $! > "$PID_FILE"
+    fi
+
+    echo -e "${YELLOW}正在生成 Nginx 配置...${NC}"
+    
+    # 创建 Nginx 配置 (先只配 HTTP，让 Certbot 自动改 HTTPS)
+    cat << EOF > /etc/nginx/conf.d/lg_master.conf
+server {
+    listen 80;
+    server_name $SSL_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$SERVER_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+    # 重载 Nginx
+    systemctl enable nginx
+    systemctl restart nginx
+
+    echo -e "${YELLOW}正在申请证书...${NC}"
+    certbot --nginx --non-interactive --agree-tos -m "$SSL_EMAIL" -d "$SSL_DOMAIN"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}SSL 证书申请成功！${NC}"
+        echo -e "${GREEN}您的 Looking Glass 现在可以通过 https://$SSL_DOMAIN 访问。${NC}"
+        
+        # 添加自动续期任务
+        (crontab -l 2>/dev/null | grep -v "certbot renew") | crontab -
+        (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet") | crontab -
+        echo -e "${GREEN}已添加每日自动续期任务。${NC}"
+    else
+        echo -e "${RED}证书申请失败。请检查域名解析是否正确，以及防火墙是否开放 80/443 端口。${NC}"
+    fi
 }
 
 # ==========================================
@@ -711,14 +784,16 @@ while true; do
     echo "2. 安装/更新 核心文件"
     echo "3. 添加新节点 (Add Node)"
     echo "4. 服务管理 (启动/停止/状态)"
-    echo "5. 退出"
-    read -p "请选择 [1-5]: " choice
+    echo "5. 配置 SSL (HTTPS)"
+    echo "6. 退出"
+    read -p "请选择 [1-6]: " choice
     case $choice in
         1) configure_install ;;
         2) install_files ;;
         3) add_node ;;
         4) manage_service ;;
-        5) exit 0 ;;
+        5) configure_ssl ;;
+        6) exit 0 ;;
         *) echo -e "${RED}无效选项${NC}" ;;
     esac
 done

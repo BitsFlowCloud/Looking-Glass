@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-# BitsFlowCloud Looking Glass Installer (Auto-IP & CF Toggle)
+# BitsFlowCloud Looking Glass Installer (Fix IP & CF Toggle)
 # ==============================================================
 
 RED='\033[0;31m'
@@ -20,15 +20,23 @@ URL_TCP="$REPO_URL/tcp.sh"
 
 [[ $EUID -ne 0 ]] && echo -e "${RED}Error: Must be run as root!${PLAIN}" && exit 1
 
-# === 0. 自动获取公网 IP ===
+# === 0. 自动获取公网 IP (增强版) ===
 get_public_ips() {
     echo -e "${GREEN}>>> Detecting Server IP...${PLAIN}"
-    # 尝试获取 IPv4
-    SERVER_IP4=$(curl -s4m5 https://ip.sb || curl -s4m5 https://ifconfig.me)
+    
+    # 1. 尝试 IPv4 (优先 ip.sb，伪装 User-Agent)
+    SERVER_IP4=$(curl -sL -4 --max-time 5 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
+    
+    # 2. 如果 ip.sb 失败，尝试备用源
+    if [ -z "$SERVER_IP4" ]; then
+        SERVER_IP4=$(curl -sL -4 --max-time 5 --user-agent "Mozilla/5.0" http://ifconfig.me | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
+    fi
+    
+    # 3. 实在获取不到，回退到 127.0.0.1
     [ -z "$SERVER_IP4" ] && SERVER_IP4="127.0.0.1"
     
-    # 尝试获取 IPv6
-    SERVER_IP6=$(curl -s6m5 https://ip.sb || curl -s6m5 https://ifconfig.co)
+    # 4. 尝试 IPv6
+    SERVER_IP6=$(curl -sL -6 --max-time 5 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}' | head -n 1)
     [ -z "$SERVER_IP6" ] && SERVER_IP6=""
 
     echo -e "IPv4: ${CYAN}$SERVER_IP4${PLAIN}"
@@ -124,7 +132,7 @@ EOF
 
 clear
 echo -e "${CYAN}=============================================================${PLAIN}"
-echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.0)${PLAIN}"
+echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.2)${PLAIN}"
 echo -e "${CYAN}=============================================================${PLAIN}"
 echo -e "1. Install Master (Frontend) [主控端]"
 echo -e "2. Install Agent (Node)      [被控端]"

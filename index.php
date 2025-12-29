@@ -5,11 +5,14 @@ if (file_exists('config.php')) {
     $config = require 'config.php';
 }
 
-// 2. 定义变量 (默认值使用你提供的原始HTML中的值)
+// 2. 定义变量
 $siteTitle = $config['site_title'] ?? 'BitsFlowCloud Looking Glass';
 $siteHeader = $config['site_header'] ?? 'BitsFlowCloud Looking Glass';
 $footerText = $config['footer_text'] ?? '&copy; 2023-2025 BitsFlowCloud Network. All Rights Reserved.';
 $cfSiteKey = $config['cf_site_key'] ?? '0x4AAAAAACJhmoIhycq-YD13';
+
+// === 新增：Turnstile 开关 (true=开启, false=关闭) ===
+$enableTurnstile = $config['enable_turnstile'] ?? true; 
 
 // 3. 安全输出函数
 function e($str) {
@@ -23,7 +26,12 @@ function e($str) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e($siteTitle); ?></title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- 只有开启时才加载 Cloudflare JS (虽然加载也不影响，但这样更干净) -->
+    <?php if ($enableTurnstile): ?>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <?php endif; ?>
+
     <style>
         :root { --cyan: #00f3ff; --purple: #bc13fe; --green: #00ff9d; --pink: #ff00de; --yellow: #f1c40f; --bg-color: #050505; --text-main: #e0e6ed; --text-dim: #8892b0; --modal-bg: #111; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -241,6 +249,9 @@ function e($str) {
         let nodeData = {}; let currentProto = ''; let currentTool = ''; let currentNode = null; let limitInterval = null; let turnstileWidgetId = null; let pendingDownloadProto = null;
         const safeStorage = { getItem: (key) => { try { return localStorage.getItem(key); } catch(e) { return null; } }, setItem: (key, val) => { try { localStorage.setItem(key, val); } catch(e) {} } };
         
+        // 将 PHP 变量传递给 JS
+        const useTurnstile = <?php echo $enableTurnstile ? 'true' : 'false'; ?>;
+
         function escapeHtml(text) { 
             if (!text) return text; 
             return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); 
@@ -433,17 +444,24 @@ function e($str) {
         function initFileTest(proto) {
             if (!currentNode) return;
             pendingDownloadProto = proto;
-            document.getElementById('modal-cf').style.display = 'flex';
-            document.getElementById('cf-status').innerText = "Please complete the check...";
-            document.getElementById('cf-status').style.color = "#888";
-            if (turnstileWidgetId === null) {
-                turnstileWidgetId = turnstile.render('#cf-widget-container', {
-                    sitekey: '<?php echo e($cfSiteKey); ?>', 
-                    theme: 'light',
-                    callback: function(token) { onTurnstileSuccess(token); },
-                    'expired-callback': function() { document.getElementById('cf-status').innerText = "Check expired. Please click again."; }
-                });
-            } else { turnstile.reset(turnstileWidgetId); }
+
+            // === 修改逻辑：根据变量判断是否显示验证 ===
+            if (useTurnstile) {
+                document.getElementById('modal-cf').style.display = 'flex';
+                document.getElementById('cf-status').innerText = "Please complete the check...";
+                document.getElementById('cf-status').style.color = "#888";
+                if (turnstileWidgetId === null) {
+                    turnstileWidgetId = turnstile.render('#cf-widget-container', {
+                        sitekey: '<?php echo e($cfSiteKey); ?>', 
+                        theme: 'light',
+                        callback: function(token) { onTurnstileSuccess(token); },
+                        'expired-callback': function() { document.getElementById('cf-status').innerText = "Check expired. Please click again."; }
+                    });
+                } else { turnstile.reset(turnstileWidgetId); }
+            } else {
+                // 如果关闭验证，直接调用成功逻辑（传 null 作为 token）
+                onTurnstileSuccess(null);
+            }
         }
 
         function onTurnstileSuccess(token) {

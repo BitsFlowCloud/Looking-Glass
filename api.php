@@ -1,18 +1,62 @@
 <?php
 /**
  * 主控端 API - 负责连接前端与各个节点
- * 修改记录：新增 Iperf3 后端频率限制
+ * 修改记录：新增 Iperf3 后端频率限制 + 节点自动注册
  */
 error_reporting(0);
 header('Content-Type: application/json; charset=utf-8');
 
 // 加载配置
-$config = require 'config.php';
+$configFile = 'config.php';
+$config = require $configFile;
 $action = $_POST['action'] ?? '';
 
 // === 获取 Turnstile 配置 ===
 $enableTurnstile = $config['enable_turnstile'] ?? true;
 $cfSecretKey     = $config['cf_secret_key'] ?? '';
+
+// >>>>>>>>>> 新增：节点自动注册接口 开始 <<<<<<<<<<
+if ($action === 'add_node') {
+    $regToken = $config['node_registration_token'] ?? '';
+    $sentToken = $_POST['reg_token'] ?? '';
+    
+    // 1. 安全校验：Token 必须存在且匹配
+    if (empty($regToken) || $sentToken !== $regToken) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid Registration Token']);
+        exit;
+    }
+
+    // 2. 接收参数
+    $newNode = [
+        'name'    => $_POST['name'] ?? 'New Node',
+        'country' => $_POST['country'] ?? 'UN',
+        'ipv4'    => $_POST['ipv4'] ?? '',
+        'ipv6'    => $_POST['ipv6'] ?? '',
+        'api_url' => $_POST['api_url'] ?? '',
+        'key'     => $_POST['key'] ?? '',
+        'unlock'  => [] // 初始化为空数组
+    ];
+
+    // 3. 写入配置文件
+    // 注意：config.php 需要有写入权限 (chmod 666)
+    $config['nodes'][] = $newNode;
+    
+    // 使用 var_export 重新生成 PHP 文件内容
+    $content = "<?php\n" .
+               "// ==========================================\n" .
+               "// Auto-generated config file\n" .
+               "// ==========================================\n" .
+               "return " . var_export($config, true) . ";\n";
+    
+    if (file_put_contents($configFile, $content)) {
+        echo json_encode(['status' => 'success', 'message' => 'Node added successfully']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to write config.php (Check Permissions)']);
+    }
+    exit;
+}
+// >>>>>>>>>> 新增：节点自动注册接口 结束 <<<<<<<<<<
+
 
 // === 1. 获取节点列表 (并抓取流媒体状态) ===
 if ($action === 'get_nodes') {

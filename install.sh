@@ -491,6 +491,28 @@ install_agent() {
     wget --no-check-certificate -O /tmp/tcp.sh "$URL_TCP"
     [ -f /tmp/tcp.sh ] && bash /tmp/tcp.sh && rm -f /tmp/tcp.sh
 
+    # === 新增：UFW 防火墙配置 ===
+    echo -e "\n${BLUE}>>> 配置防火墙 (UFW)...${PLAIN}"
+    if [ -f /etc/debian_version ]; then
+        apt-get install -y ufw
+    elif [ -f /etc/redhat-release ]; then
+        yum install -y epel-release
+        yum install -y ufw
+    fi
+
+    if command -v ufw >/dev/null 2>&1; then
+        ufw allow 22/tcp comment 'SSH'
+        ufw allow 80/tcp comment 'HTTP'
+        ufw allow 443/tcp comment 'HTTPS'
+        ufw allow 30000:40000/tcp comment 'Iperf3 Range'
+        # 强制开启
+        echo "y" | ufw enable
+        echo -e "${GREEN}防火墙已开启并放行端口: 22, 80, 443, 30000-40000${PLAIN}"
+    else
+        echo -e "${RED}UFW 安装失败，请手动配置防火墙放行端口 30000-40000${PLAIN}"
+    fi
+    # ==========================
+
     chown -R $WEB_USER:$WEB_USER "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
 

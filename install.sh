@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-# BitsFlowCloud Looking Glass Installer (Fix IP & CF Toggle)
+# BitsFlowCloud Looking Glass Installer (v2.3 - Fix IPv6 Regex)
 # ==============================================================
 
 RED='\033[0;31m'
@@ -20,24 +20,33 @@ URL_TCP="$REPO_URL/tcp.sh"
 
 [[ $EUID -ne 0 ]] && echo -e "${RED}Error: Must be run as root!${PLAIN}" && exit 1
 
-# === 0. 自动获取公网 IP (增强版) ===
+# === 0. 自动获取公网 IP (修正正则版) ===
 get_public_ips() {
     echo -e "${GREEN}>>> Detecting Server IP...${PLAIN}"
     
-    # 1. 尝试 IPv4 (优先 ip.sb，伪装 User-Agent)
-    SERVER_IP4=$(curl -sL -4 --max-time 5 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
-    
-    # 2. 如果 ip.sb 失败，尝试备用源
+    # --- IPv4 检测 ---
+    # 优先 ip.sb
+    SERVER_IP4=$(curl -sL -4 --max-time 3 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
+    # 备用 ifconfig.me
     if [ -z "$SERVER_IP4" ]; then
-        SERVER_IP4=$(curl -sL -4 --max-time 5 --user-agent "Mozilla/5.0" http://ifconfig.me | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
+        SERVER_IP4=$(curl -sL -4 --max-time 3 --user-agent "Mozilla/5.0" http://ifconfig.me | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n 1)
     fi
-    
-    # 3. 实在获取不到，回退到 127.0.0.1
+    # 兜底
     [ -z "$SERVER_IP4" ] && SERVER_IP4="127.0.0.1"
     
-    # 4. 尝试 IPv6
-    SERVER_IP6=$(curl -sL -6 --max-time 5 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}' | head -n 1)
-    [ -z "$SERVER_IP6" ] && SERVER_IP6=""
+    # --- IPv6 检测 (修正正则：不再匹配空段) ---
+    # 优先 ip.sb
+    SERVER_IP6=$(curl -sL -6 --max-time 3 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}' | head -n 1)
+    
+    # 备用 ifconfig.me (你验证过这个是好的)
+    if [ -z "$SERVER_IP6" ]; then
+        SERVER_IP6=$(curl -sL -6 --max-time 3 --user-agent "Mozilla/5.0" http://ifconfig.me | grep -oE '([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}' | head -n 1)
+    fi
+    
+    # 备用 ifconfig.co
+    if [ -z "$SERVER_IP6" ]; then
+        SERVER_IP6=$(curl -sL -6 --max-time 3 --user-agent "Mozilla/5.0" http://ifconfig.co | grep -oE '([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}' | head -n 1)
+    fi
 
     echo -e "IPv4: ${CYAN}$SERVER_IP4${PLAIN}"
     echo -e "IPv6: ${CYAN}${SERVER_IP6:-None}${PLAIN}"
@@ -132,7 +141,7 @@ EOF
 
 clear
 echo -e "${CYAN}=============================================================${PLAIN}"
-echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.2)${PLAIN}"
+echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.3)${PLAIN}"
 echo -e "${CYAN}=============================================================${PLAIN}"
 echo -e "1. Install Master (Frontend) [主控端]"
 echo -e "2. Install Agent (Node)      [被控端]"

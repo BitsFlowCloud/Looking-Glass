@@ -1,6 +1,7 @@
 <?php
 /**
  * 主控端 API - 负责连接前端与各个节点
+ * 修改记录：新增 Iperf3 后端频率限制
  */
 error_reporting(0);
 header('Content-Type: application/json; charset=utf-8');
@@ -9,8 +10,7 @@ header('Content-Type: application/json; charset=utf-8');
 $config = require 'config.php';
 $action = $_POST['action'] ?? '';
 
-// === 新增：获取 Turnstile 配置 ===
-// 默认为 true (开启)，除非 config.php 里明确写了 false
+// === 获取 Turnstile 配置 ===
 $enableTurnstile = $config['enable_turnstile'] ?? true;
 $cfSecretKey     = $config['cf_secret_key'] ?? '';
 
@@ -65,16 +65,11 @@ if ($action === 'run_tool') {
     if ($enableTurnstile) {
         $token = $_POST['cf-turnstile-response'] ?? '';
         
-        // 如果没有 Token 或者 Token 为空
         if (empty($token)) {
-            // 注意：如果是 Ping/MTR 这种通常由 JS 触发的，前端需要确保发送了这个 Token
-            // 如果前端还没集成 Turnstile 到 Ping 按钮，这里会报错。
-            // 建议：如果只是下载文件需要验证，Ping 不需要，可以在 config.php 设置为 false
             echo json_encode(['status' => 'error', 'message' => 'Security check failed: CAPTCHA missing.']);
             exit;
         }
 
-        // 向 Cloudflare 发起验证
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, "https://challenges.cloudflare.com/turnstile/v0/siteverify");
         curl_setopt($ch, CURLOPT_POST, 1);
@@ -89,13 +84,45 @@ if ($action === 'run_tool') {
         
         $cf_json = json_decode($cf_result, true);
         
-        // 验证失败
         if (!$cf_json || !($cf_json['success'] ?? false)) {
             echo json_encode(['status' => 'error', 'message' => 'Security check failed. Please refresh the page.']);
             exit;
         }
     }
     // >>>>>>>>>> Cloudflare Turnstile 验证逻辑结束 <<<<<<<<<<
+
+    // >>>>>>>>>> 新增：Iperf3 后端频率限制 (防绕过) 开始 <<<<<<<<<<
+    $tool = $_POST['tool'] ?? '';
+    if ($tool === 'iperf3') {
+        // 1. 获取客户端真实 IP
+        $clientIp = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'];
+        
+        // 2. 配置限制 (每小时 2 次)
+        $limit = 2; 
+        $hour = date('YmdH'); // 精确到小时，如 2023102712
+        $tmpDir = sys_get_temp_dir();
+        // 生成唯一的临时文件路径
+        $limitFile = $tmpDir . '/lg_iperf_' . $hour . '_' . md5($clientIp);
+        
+        // 3. 读取当前次数
+        $currentCount = 0;
+        if (file_exists($limitFile)) {
+            $currentCount = (int)file_get_contents($limitFile);
+        }
+        
+        // 4. 判断是否超限
+        if ($currentCount >= $limit) {
+            echo json_encode([
+                'status' => 'error', 
+                'message' => "Hourly limit reached ($limit/hour). Please try again later."
+            ]);
+            exit; // 直接终止，不请求节点
+        }
+        
+        // 5. 计数 +1
+        file_put_contents($limitFile, $currentCount + 1);
+    }
+    // >>>>>>>>>> 新增：Iperf3 后端频率限制 结束 <<<<<<<<<<
 
     $node_id = $_POST['node_id'] ?? '';
     
@@ -105,11 +132,9 @@ if ($action === 'run_tool') {
     }
     $node = $config['nodes'][$node_id];
     
-    // 透传所有参数给 Agent
     $postData = $_POST;
-    $postData['key'] = $node['key']; // 加上密钥
+    $postData['key'] = $node['key'];
     
-    // 如果开启了验证，发送给 Agent 时可以把 Token 删了，减少包大小(可选)
     unset($postData['cf-turnstile-response']);
 
     $ch = curl_init();

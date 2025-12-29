@@ -1,26 +1,3 @@
-非常感谢你的严谨。我再次确认，**这就是主控端（Master）脚本**。
-
-**如何区分主控与被控？**
-*   **主控端 (Master)**：生成 `index.php` (前端UI) 和 `api.php` (调度逻辑)，负责向节点发号施令，展示网页。
-*   **被控端 (Node)**：生成 `agent.php` (执行命令) 和 `media_check.py` (流媒体检测)，负责干活。
-
-针对你的新需求，我对脚本进行了**深度升级**：
-
-1.  **Nginx 安全加固**：
-    *   **隐藏版本号**：防止扫描特定版本漏洞。
-    *   **禁止访问敏感文件**：直接在 Nginx 层拦截对 `config.php` (含密钥)、`.git`、`*.sh`、`*.log` 的访问，防止 PHP 解析失败导致源码泄露。
-    *   **安全响应头**：添加 HSTS, X-Frame-Options, X-Content-Type-Options 等防护头。
-2.  **卸载功能**：
-    *   **仅卸载主控**：只删除网页文件、配置文件和定时任务，保留环境。
-    *   **彻底卸载**：删除上述内容，并卸载 Nginx、PHP、Certbot 等组件（会发出高能预警）。
-
----
-
-### 🛡️ 安全加固版主控端脚本 (`deploy_master.sh`)
-
-请**全选覆盖**旧脚本：
-
-```bash
 #!/bin/bash
 
 # 定义颜色
@@ -105,7 +82,7 @@ function configure_install() {
     echo "SERVER_PORT=\"$SERVER_PORT\"" >> "$SETTINGS_FILE"
     echo "SITE_TITLE=\"$SITE_TITLE\"" >> "$SETTINGS_FILE"
     echo "CF_SITE_KEY=\"$CF_SITE_KEY\"" >> "$SETTINGS_FILE"
-  
+    
     echo -e "${GREEN}配置已保存！${NC}"
 }
 
@@ -246,7 +223,7 @@ EOF
             </div>
             <div class="ip-action-box" onclick="openActionModal('IPv4')"><span id="ipv4-addr">--</span></div>
             <div class="terminal-output" id="term-v4">[Waiting for Node Selection...]</div>
-          
+            
             <div class="unlock-header">Streaming Services & AI Unlock Monitor (30m Auto-update)</div>
             <div class="unlock-grid" id="unlock-list-v4"></div>
         </div>
@@ -259,7 +236,7 @@ EOF
             </div>
             <div class="ip-action-box" onclick="openActionModal('IPv6')"><span id="ipv6-addr">--</span></div>
             <div class="terminal-output" id="term-v6">[Waiting for Node Selection...]</div>
-          
+            
             <div class="unlock-header">Streaming Services & AI Unlock Monitor (30m Auto-update)</div>
             <div class="unlock-grid" id="unlock-list-v6"></div>
         </div>
@@ -281,7 +258,7 @@ EOF
             <button class="btn-close" onclick="closeAllModals()">Cancel</button>
         </div>
     </div>
-  
+    
     <div class="modal-overlay" id="modal-target">
         <div class="modal">
             <h3 id="target-title">ENTER TARGET</h3>
@@ -310,7 +287,7 @@ EOF
     <script>
         // Inject Cloudflare Site Key here
         const CF_SITE_KEY = '$CF_SITE_KEY';
-      
+        
         const canvas = document.getElementById('bgCanvas'); const ctx = canvas.getContext('2d');
         let width, height; let particles = [];
         function initCanvas() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; particles = []; for(let i=0; i<100; i++) particles.push({ x: Math.random()*width, y: Math.random()*height, z: Math.random()*2+0.5, size: Math.random()*2 }); }
@@ -319,7 +296,7 @@ EOF
 
         let nodeData = {}; let currentProto = ''; let currentTool = ''; let currentNode = null; let limitInterval = null; let turnstileWidgetId = null; let pendingDownloadProto = null;
         const safeStorage = { getItem: (key) => { try { return localStorage.getItem(key); } catch(e) { return null; } }, setItem: (key, val) => { try { localStorage.setItem(key, val); } catch(e) {} } };
-      
+        
         function escapeHtml(text) { 
             if (!text) return text; 
             return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); 
@@ -332,13 +309,13 @@ EOF
                 const response = await fetch('api.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=get_nodes' });
                 const json = await response.json();
                 if (json.status !== 'success') throw new Error(json.message || 'Failed to load nodes');
-              
+                
                 nodeData = json.data;
                 optionsContainer.innerHTML = '';
                 const keys = Object.keys(nodeData);
-              
+                
                 if (keys.length === 0) { document.getElementById("currentSelectDisplay").innerHTML = '<span style="color:#666;">No Nodes Configured</span>'; return; }
-              
+                
                 keys.forEach(key => {
                     const node = nodeData[key]; 
                     const flagCode = node.country || node.flag || 'xx';
@@ -368,7 +345,7 @@ EOF
             document.getElementById('ipv6-addr').innerText = data.ipv6 || data.ip6 || '--';
             document.getElementById('term-v4').innerHTML = \`<div style="margin-bottom:10px; color:#888;">[System] Connected to \${escapeHtml(data.name)}</div>\`;
             document.getElementById('term-v6').innerHTML = \`<div style="margin-bottom:10px; color:#888;">[System] Connected to \${escapeHtml(data.name)}</div>\`;
-          
+            
             let v4Data = null;
             let v6Data = null;
             if (data.unlock) {
@@ -382,7 +359,7 @@ EOF
             }
             renderUnlockList('v4', v4Data); 
             renderUnlockList('v6', v6Data);
-          
+            
             resetTestButtons(); 
         }
 
@@ -410,11 +387,11 @@ EOF
             });
             container.innerHTML = html;
         }
-      
+        
         function showCustomAlert(msg, title = "NOTICE") { document.getElementById('msg-title').innerText = title; document.getElementById('msg-body').innerHTML = msg; document.getElementById('modal-message').style.display = 'flex'; }
         function closeMsgModal() { if(limitInterval) { clearInterval(limitInterval); limitInterval = null; } document.getElementById('modal-message').style.display = 'none'; }
         function openActionModal(proto) { if (!currentNode) return; currentProto = proto; document.getElementById('modal-proto-label').innerText = proto; document.getElementById('modal-action').style.display = 'flex'; }
-      
+        
         function selectTool(tool) { 
             currentTool = tool; 
             document.getElementById('modal-action').style.display = 'none'; 
@@ -428,7 +405,7 @@ EOF
                 document.getElementById('target-input').focus(); 
             } 
         }
-      
+        
         function closeAllModals() { if(limitInterval) { clearInterval(limitInterval); limitInterval = null; } document.getElementById('modal-action').style.display = 'none'; document.getElementById('modal-target').style.display = 'none'; document.getElementById('modal-cf').style.display = 'none'; }
         function startCountdown(seconds, elementId) { if(limitInterval) clearInterval(limitInterval); let remaining = seconds; const el = document.getElementById(elementId); if(el) el.innerText = remaining; limitInterval = setInterval(() => { remaining--; if(el) el.innerText = remaining; if(remaining <= 0) { clearInterval(limitInterval); closeMsgModal(); } }, 1000); }
 
@@ -476,12 +453,12 @@ EOF
         async function runSimulation() {
             const rawTarget = document.getElementById('target-input').value.trim();
             if(!rawTarget) { showCustomAlert("Please enter a target IP!", "INPUT ERROR"); return; }
-          
+            
             if (!/^[a-zA-Z0-9.:-]+$/.test(rawTarget)) { 
                 showCustomAlert("Invalid characters detected.<br>Only letters, numbers, dots, colons and hyphens allowed.", "SECURITY ALERT"); 
                 return; 
             }
-          
+            
             const safeTarget = escapeHtml(rawTarget);
             closeAllModals(); 
             const termId = currentProto === 'IPv4' ? 'term-v4' : 'term-v6'; const term = document.getElementById(termId);
@@ -492,7 +469,7 @@ EOF
                 const formData = new FormData(); formData.append('action', 'run_tool'); formData.append('node_id', currentNode); formData.append('tool', currentTool); formData.append('target', rawTarget); formData.append('proto', currentProto);
                 const response = await fetch('api.php', { method: 'POST', body: formData });
                 const text = await response.text();
-              
+                
                 if (text.startsWith('{') && text.includes('"status":"error"')) {
                     const json = JSON.parse(text);
                      term.innerHTML += \`<span style="color:var(--pink)">Error: \${escapeHtml(json.message)}</span>\\n\`;
@@ -532,7 +509,7 @@ EOF
             setTimeout(() => {
                 closeAllModals();
                 let downloadUrl = '';
-              
+                
                 if (proto === 'IPv4') {
                     if (node.ipv4) downloadUrl = \`http://\${node.ipv4}/1gb.bin\`;
                 } else {
@@ -542,7 +519,7 @@ EOF
                         downloadUrl = \`http://\${v6}/1gb.bin\`;
                     }
                 }
-              
+                
                 if(downloadUrl) {
                     window.open(downloadUrl, '_blank', 'noopener,noreferrer');
                 } else {
@@ -620,7 +597,7 @@ EOF
 
     # 修复权限
     chmod -R 755 "$WEB_ROOT"
-  
+    
     echo -e "${GREEN}主控端文件安装/更新完成！${NC}"
 }
 
@@ -636,7 +613,7 @@ function add_node() {
         echo -e "${RED}错误: config.php 不存在，请先运行安装选项。${NC}"
         return
     fi
-  
+    
     echo -e "${YELLOW}--- 添加新节点 ---${NC}"
     read -p "请输入节点 ID (例如 de01): " NODE_ID
     read -p "请输入节点名称 (例如 DE - Frankfurt): " NODE_NAME
@@ -659,7 +636,7 @@ function add_node() {
     # 安全插入
     TEMP_FILE=$(mktemp)
     awk -v new_node="$NEW_NODE_PHP" '{sub(/\/\/_NEXT_NODE_/, new_node); print}' "$CONFIG_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$CONFIG_FILE"
-  
+    
     chmod 644 "$CONFIG_FILE"
     echo -e "${GREEN}节点 $NODE_NAME 已成功添加到 config.php!${NC}"
 }
@@ -670,7 +647,7 @@ function add_node() {
 function manage_service() {
     if [ ! -f "$SETTINGS_FILE" ]; then configure_install; fi
     source "$SETTINGS_FILE"
-  
+    
     echo ""
     echo "--- 主控端服务管理 ---"
     echo "1. 启动 PHP 后端服务 (Start)"
@@ -735,10 +712,10 @@ function configure_ssl() {
     echo -e "${YELLOW}>>> 开始配置 SSL (使用 Let's Encrypt)${NC}"
     echo -e "${YELLOW}注意: 此操作将安装 Nginx 并占用 80/443 端口。${NC}"
     echo -e "${YELLOW}请确保您的域名 ($SITE_TITLE 对应的域名) 已解析到本机 IP！${NC}"
-  
+    
     read -p "请输入您的域名 (例如 lg.example.com): " SSL_DOMAIN
     read -p "请输入您的邮箱 (用于证书通知): " SSL_EMAIL
-  
+    
     if [ -z "$SSL_DOMAIN" ] || [ -z "$SSL_EMAIL" ]; then
         echo -e "${RED}域名或邮箱不能为空！${NC}"
         return
@@ -760,13 +737,13 @@ function configure_ssl() {
     fi
 
     echo -e "${YELLOW}正在生成 Nginx 安全配置...${NC}"
-  
+    
     # 创建经过安全加固的 Nginx 配置
     cat << EOF > $NGINX_CONF
 server {
     listen 80;
     server_name $SSL_DOMAIN;
-  
+    
     # [安全加固] 隐藏 Nginx 版本
     server_tokens off;
 
@@ -787,7 +764,7 @@ server {
         deny all;
         return 404;
     }
-  
+    
     # [安全加固] 禁止访问隐藏文件 (排除 Let's Encrypt 验证目录)
     location ~ /\.(?!well-known).* {
         deny all;
@@ -805,7 +782,7 @@ EOF
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}SSL 证书申请成功！${NC}"
         echo -e "${GREEN}您的 Looking Glass 现在可以通过 https://$SSL_DOMAIN 访问。${NC}"
-      
+        
         # 添加自动续期任务
         (crontab -l 2>/dev/null | grep -v "certbot renew") | crontab -
         (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet") | crontab -
@@ -840,13 +817,13 @@ function uninstall_lg() {
         kill $(cat "$PID_FILE") 2>/dev/null
         rm "$PID_FILE"
     fi
-  
+    
     # 删除文件
     echo -e "${YELLOW}正在删除网站文件 ($WEB_ROOT)...${NC}"
     rm -rf "$WEB_ROOT"
     rm -f "$SETTINGS_FILE"
     rm -f "$LOG_FILE"
-  
+    
     # 删除 Nginx 配置
     if [ -f "$NGINX_CONF" ]; then
         echo -e "${YELLOW}正在删除 Nginx 配置文件...${NC}"
@@ -862,7 +839,7 @@ function uninstall_lg() {
         echo -e "${RED}!!! 正在彻底卸载组件 (Nginx, PHP, Certbot)...${NC}"
         echo -e "${RED}这可能会影响服务器上其他网站 (如果有的话)。5秒后继续...${NC}"
         sleep 5
-      
+        
         if [ -f /etc/debian_version ]; then
             apt-get remove --purge -y nginx php-cli php-common php-curl php-json certbot python3-certbot-nginx
             apt-get autoremove -y
@@ -882,7 +859,7 @@ check_env
 
 while true; do
     echo ""
-        echo "1. 配置安装参数 (目录/标题/端口)"
+    echo "1. 配置安装参数 (目录/标题/端口)"
     echo "2. 安装/更新 核心文件"
     echo "3. 添加新节点 (Add Node)"
     echo "4. 服务管理 (启动/停止/状态)"

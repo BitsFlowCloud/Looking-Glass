@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-# BitsFlowCloud Looking Glass Installer (v4.0 - Ultimate Edition)
+# BitsFlowCloud Looking Glass Installer (v5.0 - Auto Register)
 # ==============================================================
 
 # === 颜色定义 ===
@@ -53,14 +53,14 @@ install_web_stack() {
     echo -e "${BLUE}>>> 正在安装 Web 环境 (Nginx, PHP, Certbot, Cron)...${PLAIN}"
     if [ -f /etc/debian_version ]; then
         apt-get update -y
-        # 增加 cron 安装
-        apt-get install -y nginx php-fpm php-cli php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip certbot cron systemd
+        # 增加 cron, ufw 安装
+        apt-get install -y nginx php-fpm php-cli php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip certbot cron systemd ufw
         WEB_USER="www-data"
         NGINX_CONF_DIR="/etc/nginx/sites-enabled"
         mkdir -p /etc/nginx/sites-enabled
     elif [ -f /etc/redhat-release ]; then
         yum install -y epel-release
-        yum install -y nginx php-fpm php-cli php-common php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip certbot cronie
+        yum install -y nginx php-fpm php-cli php-common php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip certbot cronie ufw
         WEB_USER="nginx"
         NGINX_CONF_DIR="/etc/nginx/conf.d"
     else
@@ -335,7 +335,7 @@ manage_nodes() {
 # === 界面绘制 ===
 clear
 echo -e "${CYAN}=============================================================${PLAIN}"
-echo -e "${PURPLE}${BOLD}      BitsFlowCloud Looking Glass Installer v4.0${PLAIN}"
+echo -e "${PURPLE}${BOLD}      BitsFlowCloud Looking Glass Installer v5.0${PLAIN}"
 echo -e "${CYAN}=============================================================${PLAIN}"
 echo -e "${GREEN}1.${PLAIN} 安装 ${BOLD}主控端 (Master)${PLAIN} - 网站前端"
 echo -e "${GREEN}2.${PLAIN} 安装 ${BOLD}被控端 (Agent)${PLAIN}  - 节点服务器"
@@ -380,28 +380,18 @@ install_master() {
         echo -e "${YELLOW}已禁用人机验证。${PLAIN}"
     fi
 
-    # === 节点 1 配置 ===
-    echo -e "\n${BLUE}--- 配置第一个节点 ---${PLAIN}"
-    read -p "节点名称 (如 Hong Kong): " NODE_NAME
-    read -p "节点地区代码 (如 HK): " NODE_COUNTRY
-    
-    read -p "节点 IPv4 (默认: $SERVER_IP4): " NODE_IPV4
-    NODE_IPV4=${NODE_IPV4:-$SERVER_IP4}
-    
-    read -p "节点 IPv6 (默认: ${SERVER_IP6:-无}): " NODE_IPV6
-    NODE_IPV6=${NODE_IPV6:-$SERVER_IP6}
-    
-    read -p "被控端 URL (如 http://$NODE_IPV4/agent.php): " AGENT_URL
-    [ -z "$AGENT_URL" ] && AGENT_URL="http://$NODE_IPV4/agent.php"
-    
-    read -p "通讯密钥 (Secret Key): " AGENT_KEY
+    # === 新增：配置自动注册令牌 ===
+    echo -e "\n${BLUE}--- 节点自动注册设置 ---${PLAIN}"
+    read -p "请设置一个节点注册令牌 (Registration Token): " REG_TOKEN
+    [ -z "$REG_TOKEN" ] && REG_TOKEN="BitsFlowCloud-$(date +%s)"
+    echo -e "已设置令牌: ${CYAN}$REG_TOKEN${PLAIN}"
 
     # === 下载文件 ===
     echo -e "\n${GREEN}>>> 正在下载主控端文件...${PLAIN}"
     wget --no-check-certificate -O "$INSTALL_DIR/index.php" "$URL_INDEX"
     wget --no-check-certificate -O "$INSTALL_DIR/api.php" "$URL_API"
 
-    # === 生成 Config.php ===
+    # === 生成 Config.php (空节点列表) ===
     echo -e "${GREEN}>>> 正在生成 config.php...${PLAIN}"
     cat > "$INSTALL_DIR/config.php" <<EOF
 <?php
@@ -415,27 +405,24 @@ return [
     'cf_site_key' => '$CF_SITE_KEY',
     'cf_secret_key' => '$CF_SECRET_KEY',
 
-    // Nodes List
-    'nodes' => [
-        1 => [
-            'name' => '$NODE_NAME',
-            'country' => '$NODE_COUNTRY',
-            'ipv4' => '$NODE_IPV4',
-            'ipv6' => '$NODE_IPV6',
-            'api_url' => '$AGENT_URL',
-            'key' => '$AGENT_KEY'
-        ]
-    ]
+    // Auto Registration Token
+    'node_registration_token' => '$REG_TOKEN',
+
+    // Nodes List (Initially Empty)
+    'nodes' => []
 ];
 EOF
 
+    # === 关键权限设置 (允许 API 修改) ===
     chown -R $WEB_USER:$WEB_USER "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
+    chmod 666 "$INSTALL_DIR/config.php"
 
     setup_nginx_conf "lg_master" "$INSTALL_DIR" "master"
 
     echo -e "\n${GREEN}✅ 主控端安装完成！${PLAIN}"
     echo -e "访问地址: http://$DOMAIN"
+    echo -e "节点注册令牌: ${CYAN}$REG_TOKEN${PLAIN} (请妥善保存，用于添加新节点)"
 }
 
 # === 被控端安装 ===
@@ -454,6 +441,10 @@ install_agent() {
 
     echo -e "\n${BLUE}--- 被控端信息 ---${PLAIN}"
     read -p "通讯密钥 (必须与主控端一致): " SECRET_KEY
+    
+    # === 新增：收集注册信息 ===
+    read -p "节点名称 (如 Tokyo): " MY_NAME
+    read -p "地区代码 (如 JP): " MY_COUNTRY
     
     read -p "公网 IPv4 (默认: $SERVER_IP4): " PUB_IPV4
     PUB_IPV4=${PUB_IPV4:-$SERVER_IP4}
@@ -475,23 +466,17 @@ install_agent() {
     fi
 
     echo -e "${GREEN}>>> 配置流媒体检测任务...${PLAIN}"
-    # 修复权限
     chmod +x "$INSTALL_DIR/check_stream.py"
     chown $WEB_USER:$WEB_USER "$INSTALL_DIR/check_stream.py"
-    
-    # 设置 Crontab (每30分钟运行一次)
     CRON_CMD="*/30 * * * * /usr/bin/python3 $INSTALL_DIR/check_stream.py --out $INSTALL_DIR/unlock_result.json >/dev/null 2>&1"
     (crontab -l 2>/dev/null | grep -v "check_stream.py"; echo "$CRON_CMD") | crontab -
-    
-    # 立即运行一次以生成初始数据
-    echo -e "${BLUE}>>> 正在后台执行首次检测...${PLAIN}"
     nohup python3 "$INSTALL_DIR/check_stream.py" --out "$INSTALL_DIR/unlock_result.json" >/dev/null 2>&1 &
 
     echo -e "\n${GREEN}>>> 正在运行 TCP 优化脚本...${PLAIN}"
     wget --no-check-certificate -O /tmp/tcp.sh "$URL_TCP"
     [ -f /tmp/tcp.sh ] && bash /tmp/tcp.sh && rm -f /tmp/tcp.sh
 
-    # === 新增：UFW 防火墙配置 ===
+    # === UFW 防火墙配置 ===
     echo -e "\n${BLUE}>>> 配置防火墙 (UFW)...${PLAIN}"
     if [ -f /etc/debian_version ]; then
         apt-get install -y ufw
@@ -511,7 +496,6 @@ install_agent() {
     else
         echo -e "${RED}UFW 安装失败，请手动配置防火墙放行端口 30000-40000${PLAIN}"
     fi
-    # ==========================
 
     chown -R $WEB_USER:$WEB_USER "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
@@ -519,8 +503,35 @@ install_agent() {
     setup_nginx_conf "lg_agent" "$INSTALL_DIR" "agent"
 
     echo -e "\n${GREEN}✅ 被控端安装完成！${PLAIN}"
-    echo -e "Agent URL: http://$DOMAIN/agent.php"
-    echo -e "Key: $SECRET_KEY"
+    MY_URL="http://$DOMAIN/agent.php"
+    echo -e "Agent URL: $MY_URL"
+
+    # === 新增：自动上报逻辑 ===
+    echo -e "\n${CYAN}--- 自动注册到主控端 ---${PLAIN}"
+    read -p "是否立即上报到主控端? [y/N]: " DO_REPORT
+    if [[ "$DO_REPORT" =~ ^[Yy]$ ]]; then
+        read -p "主控端 API 地址 (如 http://master.com/api.php): " MASTER_API
+        read -p "注册令牌 (Registration Token): " REG_TOKEN
+        
+        echo -e "${BLUE}>>> 正在发送注册请求...${PLAIN}"
+        RESPONSE=$(curl -s -X POST \
+            -d "action=add_node" \
+            -d "reg_token=$REG_TOKEN" \
+            -d "name=$MY_NAME" \
+            -d "country=$MY_COUNTRY" \
+            -d "ipv4=$PUB_IPV4" \
+            -d "ipv6=$PUB_IPV6" \
+            -d "api_url=$MY_URL" \
+            -d "key=$SECRET_KEY" \
+            "$MASTER_API")
+        
+        # 简单判断返回内容是否包含 success
+        if [[ "$RESPONSE" == *"success"* ]]; then
+            echo -e "${GREEN}🎉 注册成功！节点已添加。${PLAIN}"
+        else
+            echo -e "${RED}❌ 注册失败。主控端返回: $RESPONSE${PLAIN}"
+        fi
+    fi
 }
 
 case $install_type in

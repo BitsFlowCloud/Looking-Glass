@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 import requests
 import re
 import socket
@@ -8,43 +7,51 @@ import json
 import sys
 import argparse
 import urllib3.util.connection as urllib3_cn
-
 # ==========================================
 # 全局控制变量
 # ==========================================
 CURRENT_PROTOCOL = socket.AF_INET 
-
 def allowed_gai_family():
     return CURRENT_PROTOCOL
-
 urllib3_cn.allowed_gai_family = allowed_gai_family
-
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
 }
-
 COOKIES_YT = {
     'CONSENT': 'YES+cb.20210328-17-p0.en+FX+416',
     'SOCS': 'CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg'
 }
-
-TIMEOUT = 6 
-
+TIMEOUT = 5
+# --- 新增：IPv6 连通性预检 ---
+def is_ipv6_supported():
+    """
+    尝试连接 Google IPv6 DNS (53端口) 来检测本机是否具备 IPv6 出网能力。
+    不发送数据，仅测试 TCP 握手。
+    """
+    try:
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        sock.settimeout(2) # 2秒超时
+        sock.connect(('2001:4860:4860::8888', 53))
+        sock.close()
+        return True
+    except (socket.error, socket.timeout, OSError):
+        return False
 def get_request(url, allow_redirects=True, use_cookies=False):
     try:
         cks = COOKIES_YT if use_cookies else {}
         with requests.Session() as s:
             return s.get(url, headers=HEADERS, cookies=cks, timeout=TIMEOUT, allow_redirects=allow_redirects)
     except Exception:
+        # 构造伪造响应对象防止 AttributeError
         class MockResponse:
-            text = ""
-            status_code = 0
-            url = url
-            history = []
-        return MockResponse()
-
+            def __init__(self, u):
+                self.text = ""
+                self.status_code = 0
+                self.url = u
+                self.history = []
+        return MockResponse(url)
 def get_ip_info():
     # 方案 A: ip-api.com
     try:
@@ -56,7 +63,6 @@ def get_ip_info():
             return f"[{country}] {isp} ({query})", country
     except:
         pass
-
     # 方案 B: ipify
     try:
         ip = requests.get("https://api64.ipify.org?format=json", timeout=5).json().get('ip')
@@ -64,11 +70,8 @@ def get_ip_info():
             return f"[Unknown] {ip}", "Unknown"
     except:
         pass
-
     return "Network Error (Connect Failed)", "Unknown"
-
 # --- 流媒体检测逻辑 ---
-
 def check_youtube(current_region):
     region = "Unknown"
     r_main = get_request("https://www.youtube.com/", use_cookies=True)
@@ -91,9 +94,7 @@ def check_youtube(current_region):
             
     if region == "Unknown" and r_main.status_code == 0:
         return "Network Error"
-
     return f"Region: {region} | Premium: {premium_status}"
-
 def check_netflix(current_region):
     id_non = "70143836" 
     id_org = "80018499" 
@@ -106,18 +107,14 @@ def check_netflix(current_region):
             return url_region
         if current_region != "Unknown": return current_region
         return "US"
-
     r1 = get_request(f"https://www.netflix.com/title/{id_non}", use_cookies=False)
     if r1.status_code == 200 and "/login" not in r1.url and "Netflix" in r1.text:
         return f"Yes (Region: {extract_region_logic(r1.url)})"
-
     r2 = get_request(f"https://www.netflix.com/title/{id_org}", use_cookies=False)
     if r2.status_code == 200 and "/login" not in r2.url and "Netflix" in r2.text:
         return f"Yes (Originals Only) Region: {extract_region_logic(r2.url)}"
-
     if r1.status_code == 403: return "No (IP Blocked)"
     return "No"
-
 def check_disney(current_region):
     r = get_request("https://www.disneyplus.com/")
     if r.status_code == 0: return "Network Error"
@@ -130,8 +127,6 @@ def check_disney(current_region):
             region = current_region
         return f"Yes (Region: {region})"
     return "No"
-
-# === 修改点：TikTok 实际检测 ===
 def check_tiktok():
     try:
         r = get_request("https://www.tiktok.com/")
@@ -143,7 +138,6 @@ def check_tiktok():
             return "No"
     except:
         return "Network Error"
-
 def check_spotify():
     try:
         r = get_request("https://www.spotify.com/")
@@ -156,14 +150,12 @@ def check_spotify():
         if r.status_code == 403: return "No"
     except: pass
     return "No (Network Error)"
-
 def check_gemini():
     r = get_request("https://gemini.google.com", allow_redirects=True, use_cookies=True)
     if r.status_code == 0: return "Network Error"
     if r.status_code == 200 and ("Google" in r.text or "Sign in" in r.text): return "Yes"
     if r.history and "accounts.google.com" in r.history[0].headers.get('Location', ''): return "Yes"
     return f"No ({r.status_code})"
-
 def run_suite(protocol, proto_name):
     global CURRENT_PROTOCOL
     CURRENT_PROTOCOL = protocol 
@@ -174,15 +166,10 @@ def run_suite(protocol, proto_name):
     print(f"IP Info: {ip_str}")
     
     if "Network Error" in ip_str and proto_name == "IPv6":
-        print("Warning: IP API failed, but forcing continue for IPv6...")
+        # 这里的 fallback 主要是为了防止 ip api 挂了但 v6 实际能用的情况
+        # 但如果 is_ipv6_supported 已经通过，这里一般不会完全断网
+        print("Warning: IP API failed.")
         region_code = "Unknown" 
-    elif "Network Error" in ip_str:
-        print("Skipping tests due to network error.")
-        return {
-            'netflix': 'Network Error', 'youtube': 'Network Error', 'disney': 'Network Error',
-            'tiktok': 'Network Error', 'spotify': 'Network Error', 'gemini': 'Network Error'
-        }
-
     results_raw = {
         'netflix': check_netflix(region_code),
         'youtube': check_youtube(region_code),
@@ -195,29 +182,49 @@ def run_suite(protocol, proto_name):
     for k, v in results_raw.items():
         print(f"{k.capitalize()}: {v}")
     
-    # 必须返回原始文本，否则 PHP 前端无法显示详细信息
     return results_raw
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=str, help="Output JSON result to file")
     args = parser.parse_args()
-
     final_data = {}
+    
+    # 1. 运行 IPv4 测试 (默认必须支持)
     final_data['v4'] = run_suite(socket.AF_INET, "IPv4")
     print("\n")
-    final_data['v6'] = run_suite(socket.AF_INET6, "IPv6")
-
+    # 2. 预检 IPv6
+    if is_ipv6_supported():
+        final_data['v6'] = run_suite(socket.AF_INET6, "IPv6")
+    else:
+        print("--- Checking via IPv6 ---")
+        print("IPv6 Unavailable (Skipping checks)")
+        # 填充 N/A 数据，保证 JSON 结构完整
+        final_data['v6'] = {
+            'netflix': 'N/A',
+            'youtube': 'N/A',
+            'disney': 'N/A',
+            'tiktok': 'N/A',
+            'spotify': 'N/A',
+            'gemini': 'N/A'
+        }
+    # 3. 输出结果
     if args.out:
         try:
             with open(args.out, 'w') as f:
                 json.dump(final_data, f)
+            # 尝试修复权限
             import os
-            try: os.chmod(args.out, 0o644)
-            except: pass
+            try: 
+                os.chmod(args.out, 0o644)
+                # 尝试将文件所有权给 www-data (uid 33 通常是 www-data)
+                # 如果当前不是 root，这步可能会失败，忽略即可
+                os.chown(args.out, 33, 33) 
+            except: 
+                pass
             print(f"\nSaved result to {args.out}")
         except Exception as e:
             print(f"Error writing file: {e}")
-
+    else:
+        print(json.dumps(final_data, indent=4))
 if __name__ == "__main__":
     main()

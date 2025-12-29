@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-# BitsFlowCloud Looking Glass Installer (v2.4 - Strict IP Check)
+# BitsFlowCloud Looking Glass Installer (v2.5 - Minimal Master)
 # ==============================================================
 
 RED='\033[0;31m'
@@ -25,28 +25,17 @@ get_public_ips() {
     echo -e "${GREEN}>>> Detecting Server IP...${PLAIN}"
     
     # --- IPv4 ---
-    # 优先使用 icanhazip (纯文本，无HTML)
     SERVER_IP4=$(curl -sL -4 --max-time 3 http://ipv4.icanhazip.com | tr -d '\n')
-    
-    # 校验: 必须包含点, 且不含 < (HTML标签)
-    if [[ "$SERVER_IP4" != *.* ]] || [[ "$SERVER_IP4" == *"html"* ]] || [[ "$SERVER_IP4" == *"body"* ]]; then
-        # 备选: ip.sb
+    if [[ "$SERVER_IP4" != *.* ]] || [[ "$SERVER_IP4" == *"html"* ]]; then
         SERVER_IP4=$(curl -sL -4 --max-time 3 --user-agent "Mozilla/5.0" http://ip.sb | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
     fi
-    # 兜底
     [ -z "$SERVER_IP4" ] && SERVER_IP4="127.0.0.1"
     
     # --- IPv6 ---
-    # 优先使用 icanhazip (纯文本)
     SERVER_IP6=$(curl -sL -6 --max-time 3 http://ipv6.icanhazip.com | tr -d '\n')
-    
-    # 校验: IPv6 必须包含冒号 (:), 长度大于 5, 且不含 HTML
     if [[ "$SERVER_IP6" != *:* ]] || [[ ${#SERVER_IP6} -lt 5 ]] || [[ "$SERVER_IP6" == *"html"* ]]; then
-        # 备选: ifconfig.co (纯文本)
         SERVER_IP6=$(curl -sL -6 --max-time 3 http://ifconfig.co | tr -d '\n')
     fi
-    
-    # 二次校验
     if [[ "$SERVER_IP6" != *:* ]] || [[ ${#SERVER_IP6} -lt 5 ]] || [[ "$SERVER_IP6" == *"html"* ]]; then
         SERVER_IP6=""
     fi
@@ -55,47 +44,60 @@ get_public_ips() {
     echo -e "IPv6: ${CYAN}${SERVER_IP6:-None}${PLAIN}"
 }
 
-# === 1. 环境准备 ===
-prepare_env() {
-    echo -e "${GREEN}>>> Installing Dependencies...${PLAIN}"
+# === 1. 安装基础 Web 环境 (Nginx/PHP) ===
+install_web_stack() {
+    echo -e "${GREEN}>>> Installing Web Stack (Nginx & PHP)...${PLAIN}"
     if [ -f /etc/debian_version ]; then
         apt-get update
-        apt-get install -y nginx php-fpm php-cli php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip iperf3 mtr-tiny iputils-ping
+        # 移除了 iperf3, mtr, ping
+        apt-get install -y nginx php-fpm php-cli php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip
         WEB_USER="www-data"
         NGINX_CONF_DIR="/etc/nginx/sites-enabled"
         mkdir -p /etc/nginx/sites-enabled
     elif [ -f /etc/redhat-release ]; then
         yum install -y epel-release
-        yum install -y nginx php-fpm php-cli php-common php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip iperf3 mtr ping
+        # 移除了 iperf3, mtr, ping
+        yum install -y nginx php-fpm php-cli php-common php-curl php-json php-mbstring php-xml curl wget unzip python3 python3-pip
         WEB_USER="nginx"
         NGINX_CONF_DIR="/etc/nginx/conf.d"
     else
         echo -e "${RED}Unsupported OS!${PLAIN}" && exit 1
     fi
+    
     pip3 install requests >/dev/null 2>&1
     systemctl enable nginx php-fpm >/dev/null 2>&1
     systemctl start nginx php-fpm >/dev/null 2>&1
 }
 
-# === 2. 修复 PHP 配置 ===
+# === 2. 安装网络工具 (仅被控端需要) ===
+install_net_tools() {
+    echo -e "${GREEN}>>> Installing Network Tools (Iperf3, MTR, Ping)...${PLAIN}"
+    if [ -f /etc/debian_version ]; then
+        apt-get install -y iperf3 mtr-tiny iputils-ping
+    elif [ -f /etc/redhat-release ]; then
+        yum install -y iperf3 mtr ping
+    fi
+}
+
+# === 3. 修复 PHP 配置 ===
 fix_php_config() {
-    echo -e "${GREEN}>>> Configuring PHP (Enabling exec, shell_exec...)${PLAIN}"
+    echo -e "${GREEN}>>> Configuring PHP...${PLAIN}"
     PHP_INI=$(php --ini | grep "Loaded Configuration File" | awk -F: '{print $2}' | xargs)
     if [ -f "$PHP_INI" ]; then
+        # 启用 exec, shell_exec 等函数
         sed -i 's/exec,//g; s/shell_exec,//g; s/popen,//g; s/proc_open,//g' "$PHP_INI"
         sed -i 's/exec //g; s/shell_exec //g; s/popen //g; s/proc_open //g' "$PHP_INI"
         systemctl restart php*-fpm >/dev/null 2>&1 || systemctl restart php-fpm >/dev/null 2>&1
     fi
 }
 
-# === 3. 生成 Nginx 配置 (默认使用 IPv4) ===
+# === 4. 生成 Nginx 配置 ===
 setup_nginx_conf() {
     local SITE_NAME=$1
     local WEB_ROOT=$2
 
     echo -e "\n${YELLOW}--- Nginx Configuration ($SITE_NAME) ---${PLAIN}"
     
-    # 默认使用检测到的 IPv4
     read -p "Enter Domain or IP (Default: $SERVER_IP4): " DOMAIN
     DOMAIN=${DOMAIN:-$SERVER_IP4}
 
@@ -144,7 +146,7 @@ EOF
 
 clear
 echo -e "${CYAN}=============================================================${PLAIN}"
-echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.4)${PLAIN}"
+echo -e "${CYAN}    BitsFlowCloud Looking Glass Installer (v2.5)${PLAIN}"
 echo -e "${CYAN}=============================================================${PLAIN}"
 echo -e "1. Install Master (Frontend) [主控端]"
 echo -e "2. Install Agent (Node)      [被控端]"
@@ -156,7 +158,7 @@ get_public_ips
 
 # === 主控端安装 ===
 install_master() {
-    prepare_env
+    install_web_stack # 只安装 Web 环境
     fix_php_config
 
     DEFAULT_DIR="/var/www/html/lg"
@@ -189,7 +191,6 @@ install_master() {
     read -p "Node Name (e.g. Hong Kong): " NODE_NAME
     read -p "Node Country Code (e.g. HK): " NODE_COUNTRY
     
-    # 自动填充本机 IP
     read -p "Node IPv4 (Default: $SERVER_IP4): " NODE_IPV4
     NODE_IPV4=${NODE_IPV4:-$SERVER_IP4}
     
@@ -206,7 +207,7 @@ install_master() {
     wget --no-check-certificate -O "$INSTALL_DIR/index.php" "$URL_INDEX"
     wget --no-check-certificate -O "$INSTALL_DIR/api.php" "$URL_API"
 
-    # === 生成 Config.php (直接写入，确保格式正确) ===
+    # === 生成 Config.php ===
     echo -e "${GREEN}>>> Generating config.php...${PLAIN}"
     cat > "$INSTALL_DIR/config.php" <<EOF
 <?php
@@ -237,7 +238,6 @@ EOF
     chown -R $WEB_USER:$WEB_USER "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
 
-    # 配置 Nginx
     setup_nginx_conf "lg_master" "$INSTALL_DIR"
 
     echo -e "\n${GREEN}✅ Master Installed! Access via http://${DOMAIN}${PLAIN}"
@@ -245,7 +245,8 @@ EOF
 
 # === 被控端安装 ===
 install_agent() {
-    prepare_env
+    install_web_stack # 安装 Web 环境
+    install_net_tools # 安装网络工具 (Iperf3/MTR/Ping)
     fix_php_config
     
     DEFAULT_DIR="/var/www/html/agent"
@@ -257,7 +258,6 @@ install_agent() {
     echo -e "\n${YELLOW}--- Agent Info ---${PLAIN}"
     read -p "Secret Key (Must match Master): " SECRET_KEY
     
-    # 自动填充本机 IP
     read -p "Public IPv4 (Default: $SERVER_IP4): " PUB_IPV4
     PUB_IPV4=${PUB_IPV4:-$SERVER_IP4}
     
@@ -268,27 +268,22 @@ install_agent() {
     wget --no-check-certificate -O "$INSTALL_DIR/agent.php" "$URL_AGENT"
     wget --no-check-certificate -O "$INSTALL_DIR/check_stream.py" "$URL_CHECK"
 
-    # 配置 Agent
     sed -i "s#\$SECRET_KEY\s*=\s*'';#\$SECRET_KEY   = '$SECRET_KEY';#g" "$INSTALL_DIR/agent.php"
     sed -i "s#\$PUBLIC_IP_V4\s*=\s*'';#\$PUBLIC_IP_V4 = '$PUB_IPV4';#g" "$INSTALL_DIR/agent.php"
     sed -i "s#\$PUBLIC_IP_V6\s*=\s*'';#\$PUBLIC_IP_V6 = '$PUB_IPV6';#g" "$INSTALL_DIR/agent.php"
 
-    # 生成测试文件
     echo -e "${GREEN}>>> Generating 1GB test file...${PLAIN}"
     if [ ! -f "$INSTALL_DIR/1gb.bin" ]; then
         dd if=/dev/zero of="$INSTALL_DIR/1gb.bin" bs=1M count=1000 status=progress
     fi
 
-    # 运行流媒体检测
     echo -e "${GREEN}>>> Running Stream Check...${PLAIN}"
     chmod +x "$INSTALL_DIR/check_stream.py"
     python3 "$INSTALL_DIR/check_stream.py" --out "$INSTALL_DIR/unlock_result.json"
     
-    # Crontab
     CRON_CMD="*/30 * * * * /usr/bin/python3 $INSTALL_DIR/check_stream.py --out $INSTALL_DIR/unlock_result.json >/dev/null 2>&1"
     (crontab -l 2>/dev/null | grep -v "check_stream.py"; echo "$CRON_CMD") | crontab -
 
-    # TCP 优化
     echo -e "\n${GREEN}>>> Running TCP Optimization...${PLAIN}"
     wget --no-check-certificate -O /tmp/tcp.sh "$URL_TCP"
     [ -f /tmp/tcp.sh ] && bash /tmp/tcp.sh && rm -f /tmp/tcp.sh
@@ -296,7 +291,6 @@ install_agent() {
     chown -R $WEB_USER:$WEB_USER "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
 
-    # 配置 Nginx
     setup_nginx_conf "lg_agent" "$INSTALL_DIR"
 
     echo -e "\n${GREEN}✅ Agent Installed! URL: http://${DOMAIN}/agent.php${PLAIN}"

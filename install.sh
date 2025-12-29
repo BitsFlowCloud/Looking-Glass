@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================
-# BitsFlowCloud Looking Glass Installer (v5.0 - Auto Register)
+# BitsFlowCloud Looking Glass Installer (v5.3 - Sync Check)
 # ==============================================================
 
 # === 颜色定义 ===
@@ -440,7 +440,7 @@ install_agent() {
     mkdir -p "$INSTALL_DIR"
 
     echo -e "\n${BLUE}--- 被控端信息 ---${PLAIN}"
-    read -p "通讯密钥 (必须与主控端一致): " SECRET_KEY
+    read -p "请设置该节点的通讯密钥 (Secret Key): " SECRET_KEY
     
     # === 新增：收集注册信息 ===
     read -p "节点名称 (如 Tokyo): " MY_NAME
@@ -470,7 +470,18 @@ install_agent() {
     chown $WEB_USER:$WEB_USER "$INSTALL_DIR/check_stream.py"
     CRON_CMD="*/30 * * * * /usr/bin/python3 $INSTALL_DIR/check_stream.py --out $INSTALL_DIR/unlock_result.json >/dev/null 2>&1"
     (crontab -l 2>/dev/null | grep -v "check_stream.py"; echo "$CRON_CMD") | crontab -
-    nohup python3 "$INSTALL_DIR/check_stream.py" --out "$INSTALL_DIR/unlock_result.json" >/dev/null 2>&1 &
+    
+    # === 修改点：前台运行检测脚本，等待结果生成 ===
+    echo -e "${BLUE}>>> 正在执行首次流媒体检测 (请等待约 30-60 秒)...${PLAIN}"
+    python3 "$INSTALL_DIR/check_stream.py" --out "$INSTALL_DIR/unlock_result.json"
+    
+    # === 修改点：确保权限正确 ===
+    if [ -f "$INSTALL_DIR/unlock_result.json" ]; then
+        chown $WEB_USER:$WEB_USER "$INSTALL_DIR/unlock_result.json"
+        echo -e "${GREEN}>>> 检测完成，结果文件已生成。${PLAIN}"
+    else
+        echo -e "${RED}>>> 警告：检测完成但未找到结果文件，请检查脚本输出。${PLAIN}"
+    fi
 
     echo -e "\n${GREEN}>>> 正在运行 TCP 优化脚本...${PLAIN}"
     wget --no-check-certificate -O /tmp/tcp.sh "$URL_TCP"

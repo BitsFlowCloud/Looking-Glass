@@ -1,7 +1,7 @@
 <?php
 /**
  * 主控端 API - 负责连接前端与各个节点
- * 修改记录：新增 Iperf3 后端频率限制 + 节点自动注册
+ * 修改记录：移除 run_tool 的 Turnstile 验证 (前端 JS 控制下载时验证)
  */
 error_reporting(0);
 header('Content-Type: application/json; charset=utf-8');
@@ -12,6 +12,8 @@ $config = require $configFile;
 $action = $_POST['action'] ?? '';
 
 // === 获取 Turnstile 配置 ===
+// 注意：虽然这里获取了配置，但在 run_tool 中不再强制检查，
+// 这样 Ping/MTR 可以直接通行，而下载测试的验证由前端 index.php 负责弹窗拦截。
 $enableTurnstile = $config['enable_turnstile'] ?? true;
 $cfSecretKey     = $config['cf_secret_key'] ?? '';
 
@@ -105,40 +107,14 @@ if ($action === 'get_nodes') {
 // === 2. 运行工具 (Ping/MTR/Iperf3) ===
 if ($action === 'run_tool') {
     
-    // >>>>>>>>>> Cloudflare Turnstile 验证逻辑开始 <<<<<<<<<<
-    if ($enableTurnstile) {
-        $token = $_POST['cf-turnstile-response'] ?? '';
-        
-        if (empty($token)) {
-            echo json_encode(['status' => 'error', 'message' => 'Security check failed: CAPTCHA missing.']);
-            exit;
-        }
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://challenges.cloudflare.com/turnstile/v0/siteverify");
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-            'secret'   => $cfSecretKey,
-            'response' => $token,
-            'remoteip' => $_SERVER['REMOTE_ADDR']
-        ]));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $cf_result = curl_exec($ch);
-        curl_close($ch);
-        
-        $cf_json = json_decode($cf_result, true);
-        
-        if (!$cf_json || !($cf_json['success'] ?? false)) {
-            echo json_encode(['status' => 'error', 'message' => 'Security check failed. Please refresh the page.']);
-            exit;
-        }
-    }
-    // >>>>>>>>>> Cloudflare Turnstile 验证逻辑结束 <<<<<<<<<<
+    // >>>>>>>>>> [已移除] Cloudflare Turnstile 验证逻辑 <<<<<<<<<<
+    // 原有的验证逻辑已被删除，以允许 Ping/MTR 无需验证码直接运行。
+    // 下载文件的验证逻辑完全由前端 (index.php) 的 JavaScript 控制。
 
     // >>>>>>>>>> 新增：Iperf3 后端频率限制 (防绕过) 开始 <<<<<<<<<<
     $tool = $_POST['tool'] ?? '';
     if ($tool === 'iperf3') {
-        // 1. 获取客户端真实 IP
+        // 1. 获取客户端真实 IP (适配 Cloudflare CDN)
         $clientIp = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'];
         
         // 2. 配置限制 (每小时 2 次)
@@ -179,6 +155,7 @@ if ($action === 'run_tool') {
     $postData = $_POST;
     $postData['key'] = $node['key'];
     
+    // 清理掉不需要转发给 Agent 的参数
     unset($postData['cf-turnstile-response']);
 
     $ch = curl_init();

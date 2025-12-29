@@ -4,55 +4,51 @@
  */
 error_reporting(0);
 header('Content-Type: application/json; charset=utf-8');
+
 // 加载配置
 $config = require 'config.php';
 $action = $_POST['action'] ?? '';
+
+// === 新增：获取 Turnstile 配置 ===
+// 默认为 true (开启)，除非 config.php 里明确写了 false
+$enableTurnstile = $config['enable_turnstile'] ?? true;
+$cfSecretKey     = $config['cf_secret_key'] ?? '';
+
 // === 1. 获取节点列表 (并抓取流媒体状态) ===
 if ($action === 'get_nodes') {
     $nodes = $config['nodes'];
     $final_nodes = [];
-    // 并发处理：如果节点多，这里可以用 curl_multi 优化，
-    // 但为了代码稳定性，这里先用简单的遍历（少量节点没影响）。
+    
     foreach ($nodes as $id => $node) {
-        // 默认流媒体状态（全空）
-        $unlock_data = [
-            'v4' => null,
-            'v6' => null
-        ];
-        // 构造请求去问节点的 agent.php
+        $unlock_data = ['v4' => null, 'v6' => null];
+        
         $postData = [
             'key'    => $node['key'],
             'action' => 'get_unlock'
         ];
+        
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $node['api_url']);
         curl_setopt($ch, CURLOPT_POST, 1);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
-        // 超时设置：非常重要！
-        // 设置为 2 秒，防止某个节点挂了导致整个网页卡住
         curl_setopt($ch, CURLOPT_TIMEOUT, 2); 
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-        
-        // 忽略 SSL 证书错误 (如果是 https 节点)
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        // 如果请求成功，解析 JSON
+        
         if ($http_code == 200 && $response) {
             $json = json_decode($response, true);
             if (is_array($json)) {
                 $unlock_data = $json;
             }
         }
-        // 把抓取到的流媒体数据，塞进节点信息里
-        $node['unlock'] = $unlock_data;
         
-        // 安全起见，删除 API Key，不发给前端
+        $node['unlock'] = $unlock_data;
         unset($node['key']);
         unset($node['api_url']);
         
@@ -61,8 +57,46 @@ if ($action === 'get_nodes') {
     echo json_encode(['status' => 'success', 'data' => $final_nodes]);
     exit;
 }
+
 // === 2. 运行工具 (Ping/MTR/Iperf3) ===
 if ($action === 'run_tool') {
+    
+    // >>>>>>>>>> Cloudflare Turnstile 验证逻辑开始 <<<<<<<<<<
+    if ($enableTurnstile) {
+        $token = $_POST['cf-turnstile-response'] ?? '';
+        
+        // 如果没有 Token 或者 Token 为空
+        if (empty($token)) {
+            // 注意：如果是 Ping/MTR 这种通常由 JS 触发的，前端需要确保发送了这个 Token
+            // 如果前端还没集成 Turnstile 到 Ping 按钮，这里会报错。
+            // 建议：如果只是下载文件需要验证，Ping 不需要，可以在 config.php 设置为 false
+            echo json_encode(['status' => 'error', 'message' => 'Security check failed: CAPTCHA missing.']);
+            exit;
+        }
+
+        // 向 Cloudflare 发起验证
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "https://challenges.cloudflare.com/turnstile/v0/siteverify");
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+            'secret'   => $cfSecretKey,
+            'response' => $token,
+            'remoteip' => $_SERVER['REMOTE_ADDR']
+        ]));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $cf_result = curl_exec($ch);
+        curl_close($ch);
+        
+        $cf_json = json_decode($cf_result, true);
+        
+        // 验证失败
+        if (!$cf_json || !($cf_json['success'] ?? false)) {
+            echo json_encode(['status' => 'error', 'message' => 'Security check failed. Please refresh the page.']);
+            exit;
+        }
+    }
+    // >>>>>>>>>> Cloudflare Turnstile 验证逻辑结束 <<<<<<<<<<
+
     $node_id = $_POST['node_id'] ?? '';
     
     if (!isset($config['nodes'][$node_id])) {
@@ -74,12 +108,15 @@ if ($action === 'run_tool') {
     // 透传所有参数给 Agent
     $postData = $_POST;
     $postData['key'] = $node['key']; // 加上密钥
+    
+    // 如果开启了验证，发送给 Agent 时可以把 Token 删了，减少包大小(可选)
+    unset($postData['cf-turnstile-response']);
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $node['api_url']);
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    // 工具运行时间较长，给 30-60 秒超时
     curl_setopt($ch, CURLOPT_TIMEOUT, 45); 
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -88,6 +125,7 @@ if ($action === 'run_tool') {
     $err = curl_error($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    
     if ($err) {
         echo "Error connecting to node: $err";
     } elseif ($http_code == 403) {
@@ -97,5 +135,6 @@ if ($action === 'run_tool') {
     }
     exit;
 }
+
 echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
 ?>

@@ -27,7 +27,7 @@ function e($str) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title><?php echo e($siteTitle); ?></title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     
     <?php if ($enableTurnstile): ?>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -130,7 +130,7 @@ function e($str) {
         /* === 控制栏 (节点选择器 + 明暗切换) === */
         .control-bar {
             width: 95%;
-            max-width: 980px; /* 修改 2：加宽到 980px */
+            max-width: 980px; 
             display: flex;
             justify-content: center;
             align-items: center;
@@ -155,7 +155,7 @@ function e($str) {
             cursor: pointer; 
             display: flex; align-items: center; justify-content: center; 
             transition: 0.3s; 
-            border-radius: 12px; /* 修改 1：大圆角 */
+            border-radius: 12px; 
             box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
             height: 42px; 
         }
@@ -166,19 +166,18 @@ function e($str) {
             transition: transform 0.3s;
         }
         .select-selected.select-arrow-active::after { transform: rotate(180deg); }
-        .select-items { position: absolute; background-color: var(--select-dropdown); border: 1px solid var(--cyan); top: 100%; left: 0; right: 0; z-index: 99; margin-top: 5px; max-height: 300px; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; /* 修改 1：大圆角 */ }
+        .select-items { position: absolute; background-color: var(--select-dropdown); border: 1px solid var(--cyan); top: 100%; left: 0; right: 0; z-index: 99; margin-top: 5px; max-height: 300px; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; }
         .select-hide { display: none; }
         .select-item { padding: 10px 25px; cursor: pointer; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; justify-content: center; color: var(--text-dim); transition: all 0.2s; font-size: 0.95rem; }
         .select-item:hover { background: var(--hover-bg); color: var(--text-main); }
         
-        /* 修改 4：Flag Icon - 圆角矩形样式 */
         .flag-icon { 
-            width: 28px; /* 稍微加大 */
+            width: 28px; 
             height: 21px; 
             margin-right: 15px; 
             vertical-align: middle; 
-            border-radius: 4px; /* 圆角矩形 */
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3); /* 阴影 */
+            border-radius: 4px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3); 
             object-fit: cover;
         }
 
@@ -216,13 +215,13 @@ function e($str) {
         }
         
         /* 主布局 */
-        .main-container { width: 95%; max-width: 980px; /* 修改 2：加宽到 980px */ display: flex; flex-direction: column; gap: 15px; margin-bottom: 10px; position: relative; z-index: 5; }
+        .main-container { width: 95%; max-width: 980px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 10px; position: relative; z-index: 5; }
         
         .glass-card { 
             background: var(--panel-bg); 
             backdrop-filter: blur(10px);
-            border-radius: 24px; /* 修改 1：大圆角 (统一 24px) */
-            padding: 20px; /* 稍微增加 Padding 以匹配大圆角 */
+            border-radius: 24px; 
+            padding: 20px; 
             border: 1px solid var(--card-border); 
             box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
             display: flex; flex-direction: column;
@@ -231,7 +230,6 @@ function e($str) {
         
         .card-title { font-size: 0.9rem; margin-bottom: 12px; font-weight: bold; padding-bottom: 6px; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--card-border); color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; }
 
-        /* IP 显示颜色与复制 */
         .ip-display-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.75rem; font-weight: bold; letter-spacing: 1px; }
         .text-v4 { color: var(--cyan); text-shadow: 0 0 5px rgba(0,243,255,0.3); }
         .text-v6 { color: var(--purple); text-shadow: 0 0 5px rgba(188,19,254,0.3); }
@@ -253,7 +251,7 @@ function e($str) {
         .command-deck { 
             background: rgba(0,0,0,0.05); 
             padding: 12px; 
-            border-radius: 16px; /* 修改 1：内部框体圆角 */
+            border-radius: 16px; 
             border: 1px solid var(--card-border); 
             margin-bottom: 12px; 
         }
@@ -267,7 +265,7 @@ function e($str) {
             padding: 8px; 
             font-family: 'JetBrains Mono'; 
             margin-bottom: 8px; 
-            border-radius: 12px; /* 修改 1：大圆角 */
+            border-radius: 12px; 
             outline: none; 
             transition: 0.3s; 
             font-size: 0.9rem; 
@@ -280,7 +278,7 @@ function e($str) {
             margin-bottom: 8px; 
             background: var(--input-bg); 
             padding: 3px; 
-            border-radius: 12px; /* 修改 1：大圆角 */
+            border-radius: 12px; 
             border: 1px solid var(--input-border); 
         }
         .proto-btn { flex: 1; background: transparent; border: none; color: var(--text-dim); padding: 5px; cursor: pointer; font-weight: bold; font-size: 0.75rem; transition: 0.2s; border-radius: 8px; }
@@ -293,37 +291,47 @@ function e($str) {
             background: var(--hover-bg); border: 1px solid var(--card-border); color: var(--text-dim); 
             padding: 8px; cursor: pointer; font-family: 'Share Tech Mono'; font-size: 0.85rem; 
             transition: 0.2s; text-transform: uppercase; 
-            border-radius: 12px; /* 修改 1：大圆角 */
+            border-radius: 12px; 
         }
         .tool-btn:hover { background: var(--cyan); color: #000; border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,243,255,0.3); }
         [data-theme="light"] .tool-btn:hover { color: #fff; }
         .tool-btn:active { transform: scale(0.98); }
 
         .dl-group { display: flex; gap: 8px; margin-top: 8px; }
-        .btn-dl-mini { flex: 1; padding: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-dim); cursor: pointer; font-size: 0.7rem; transition: 0.2s; border-radius: 10px; /* 修改 1：大圆角 */ }
+        /* 修改 2：加宽下载按钮 */
+        .btn-dl-mini { 
+            flex: 1; 
+            padding: 10px 15px; /* 加大 Padding */
+            border: 1px solid var(--input-border); 
+            background: var(--input-bg); 
+            color: var(--text-dim); 
+            cursor: pointer; 
+            font-size: 0.85rem; /* 加大字体 */
+            font-weight: bold; /* 加粗 */
+            transition: 0.2s; 
+            border-radius: 10px; 
+        }
         .btn-dl-mini:hover { border-color: var(--text-main); color: var(--text-main); }
 
-        /* === 修改 3：拉长输出框高度 50px (230 -> 280px) === */
         .terminal-output { 
             background: var(--term-bg); 
             border: 1px solid var(--term-border); 
             color: var(--term-text); 
             padding: 12px; 
             font-size: 0.75rem; 
-            height: 280px; /* 修改 3：增加高度 */
+            height: 280px; 
             overflow-y: auto; 
-            border-radius: 16px; /* 修改 1：内部框体圆角 */
+            border-radius: 16px; 
             white-space: pre-wrap; 
             font-family: 'Consolas', monospace;
             transition: background-color 0.3s, color 0.3s, border-color 0.3s;
         }
 
-        /* 流媒体框 */
         .monitor-container {
             display: flex;
             min-height: 140px; 
             background: rgba(0,0,0,0.05);
-            border-radius: 16px; /* 修改 1：内部框体圆角 */
+            border-radius: 16px; 
             overflow: hidden;
             border: 1px solid var(--card-border);
         }
@@ -367,7 +375,7 @@ function e($str) {
         .h-item {
             background: var(--hover-bg);
             padding: 10px 12px; 
-            border-radius: 12px; /* 修改 1：内部框体圆角 */
+            border-radius: 12px; 
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -376,11 +384,14 @@ function e($str) {
         }
         .h-item:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.1); }
         
+        /* 修改 1：流媒体名称加大加粗 */
         .h-label { 
-            font-size: 0.75rem; 
-            color: var(--text-dim); 
+            font-size: 0.85rem; /* 加大 */
+            color: var(--text-main); /* 调亮 */
             text-transform: uppercase; 
             margin-bottom: 5px; 
+            font-weight: 800; /* 加粗 */
+            letter-spacing: 0.5px;
         }
         .h-val { 
             font-family: 'JetBrains Mono'; 
@@ -392,17 +403,15 @@ function e($str) {
             justify-content: center; 
         }
 
-        /* === 修改 4：Flag Icon - 状态标圆角矩形样式 === */
         .status-flag {
-            height: 16px; /* 稍微加大 */
+            height: 16px; 
             width: auto;
-            border-radius: 4px; /* 圆角矩形 */
+            border-radius: 4px; 
             margin-left: 6px;
             vertical-align: middle;
             box-shadow: 0 0 3px rgba(0,0,0,0.4);
         }
 
-        /* 状态颜色 */
         .status-yes { color: var(--green); font-weight: bold; text-shadow: 0 0 5px rgba(0,255,157,0.2); }
         [data-theme="light"] .status-yes { color: #00b36b; text-shadow: none; }
         
@@ -412,13 +421,12 @@ function e($str) {
         .status-no { color: #666; font-weight: bold; }
         .status-na { color: #888; font-size: 0.7rem; }
         
-        /* 模态框 */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
         .modal { 
             background: var(--modal-bg); 
             border: 1px solid var(--card-border); 
             padding: 30px; 
-            border-radius: 24px; /* 修改 1：大圆角 */
+            border-radius: 24px; 
             width: 450px; 
             text-align: center; 
             box-shadow: 0 0 50px rgba(0,0,0,0.5); 
@@ -426,11 +434,10 @@ function e($str) {
         }
         .btn-close { background: transparent; border: none; color: var(--text-dim); margin-top: 20px; cursor: pointer; text-decoration: underline; }
 
-        /* Footer 样式 */
         footer { 
             margin-top: auto; 
             width: 100%; 
-            max-width: 980px; /* 修改 2：加宽到 980px */
+            max-width: 980px; 
             text-align: center;
             padding: 10px 0; 
             font-size: 0.75rem; 
@@ -439,7 +446,6 @@ function e($str) {
             opacity: 0.6; 
         }
         
-        /* Toast 样式 */
         .toast { 
             position: fixed; 
             bottom: 30px; 
@@ -448,7 +454,7 @@ function e($str) {
             background: rgba(0, 255, 157, 0.95); 
             color: #000; 
             padding: 10px 30px; 
-            border-radius: 12px; /* 修改 1：大圆角 */
+            border-radius: 12px; 
             font-weight: bold; 
             display: none; 
             z-index: 200; 
@@ -464,7 +470,6 @@ function e($str) {
             100% { opacity: 0; transform: translate(-50%, -20px); }
         }
 
-        /* 移动端适配 */
         @media (max-width: 768px) {
             .header { margin-top: 1rem; }
             .control-bar { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -849,10 +854,17 @@ function e($str) {
                 const response = await fetch('api.php', { method: 'POST', body: formData });
                 const text = await response.text();
                 
-                if (text.startsWith('{') && text.includes('"status":"error"')) {
+                // === 新增：JSON 错误解析逻辑 ===
+                let isJsonError = false;
+                try {
                     const json = JSON.parse(text);
-                     term.innerHTML += `<span style="color:var(--pink)">Error: ${escapeHtml(json.message)}</span>\n`;
-                } else {
+                    if (json.status === 'error') {
+                        term.innerHTML += `<span style="color:var(--pink)">Error: ${escapeHtml(json.message)}</span>\n`;
+                        isJsonError = true;
+                    }
+                } catch(e) {}
+
+                if (!isJsonError) {
                      // 使用 CSS 变量控制结果文本颜色
                      term.innerHTML += `<span style="color:var(--term-text)">${escapeHtml(text)}</span>\n`; 
                      term.innerHTML += `\n> Done.\n`;
@@ -867,6 +879,16 @@ function e($str) {
                 const formData = new FormData(); formData.append('action', 'run_tool'); formData.append('node_id', currentNode); formData.append('tool', 'iperf3'); formData.append('target', '0.0.0.0'); formData.append('proto', selectedProto);
                 const response = await fetch('api.php', { method: 'POST', body: formData });
                 const text = await response.text();
+                
+                // === 新增：JSON 错误解析逻辑 ===
+                try {
+                    const json = JSON.parse(text);
+                    if (json.status === 'error') {
+                        showCustomAlert(escapeHtml(json.message), "ERROR");
+                        return;
+                    }
+                } catch(e) {}
+
                 if (text.includes("iperf3 -c")) {
                     const cmd = text.trim();
                     showCustomAlert(
@@ -880,7 +902,8 @@ function e($str) {
 
         function showCustomAlert(msg, title = "NOTICE") { document.getElementById('msg-title').innerText = title; document.getElementById('msg-body').innerHTML = msg; document.getElementById('modal-message').style.display = 'flex'; }
         function closeMsgModal() { document.getElementById('modal-message').style.display = 'none'; }
-        function closeAllModals() { document.getElementById('modal-cf').style.display = 'none'; document.getElementById('modal-message').style.display = 'none'; }
+        function closeAllModals() { document.getElementById('modal-cf').style.display = 'none'; document.getElementById('modal-message').style.display = 'none';
+        }
 
         function initFileTest(proto) {
             if (!currentNode) return;

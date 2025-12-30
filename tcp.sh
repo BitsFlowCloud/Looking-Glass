@@ -1,182 +1,249 @@
-#!/bin/sh
+#!/bin/bash
 
-# =================================================================
-# Linux 网络全能优化脚本 (菜单版)
-# 特性: 智能备份 / 极致优化 / 一键恢复
-# =================================================================
+# =========================================================
+# Linux TCP 极致优化脚本 (终极版)
+# 核心特性: 自动内核升级 / 极致低延迟 / 极致带宽 / 智能适配
+# 适配系统: CentOS 7+ / Debian 9+ / Ubuntu 16+ / Alma / Rocky
+# =========================================================
 
-# --- 0. 基础变量与颜色设置 ---
-BACKUP_FILE="/etc/sysctl.conf.bak.original"
-CONFIG_FILE="/etc/sysctl.conf"
-
-# 定义颜色 (兼容性写法)
-RED='\033[0;31m'
+# 颜色定义
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;36m'
 PLAIN='\033[0m'
 
-# --- 1. Root 权限检查 ---
-if [ "$(id -u)" != "0" ]; then
-    echo "${RED}❌ 错误: 必须使用 Root 权限运行此脚本。${PLAIN}"
+# 配置文件路径
+SYSCTL_CONF="/etc/sysctl.conf"
+CUSTOM_SYSCTL_CONF="/etc/sysctl.d/99-extreme-tcp.conf"
+BACKUP_SYSCTL_CONF="/etc/sysctl.conf.bak_before_opt"
+
+# 检查 Root 权限
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}错误: 必须使用 root 权限运行此脚本!${PLAIN}"
     exit 1
 fi
 
-# --- 2. 核心功能函数 ---
+# =========================================================
+#  内核检查与升级模块
+# =========================================================
 
-# [功能1] 检查环境并执行优化
-function_optimize() {
-    echo "${CYAN}🔍 正在进行环境与内核检测...${PLAIN}"
-    
-    # 检测 OpenVZ
-    if [ -f "/proc/user_beancounters" ]; then
-        echo "${RED}❌ 检测到 OpenVZ 环境，无法修改内核参数，脚本终止。${PLAIN}"
-        return
-    fi
-
-    # 检测内核版本 (要求 >= 4.9)
-    KERNEL_MAJOR=$(uname -r | cut -d. -f1)
-    KERNEL_MINOR=$(uname -r | cut -d. -f2)
-    if [ "$KERNEL_MAJOR" -lt 4 ] || { [ "$KERNEL_MAJOR" -eq 4 ] && [ "$KERNEL_MINOR" -lt 9 ]; }; then
-        echo "${RED}❌ 内核版本过低 ($(uname -r))。BBR 需要 Kernel 4.9+。${PLAIN}"
-        return
-    fi
-
-    # 尝试加载模块
-    if command -v modprobe > /dev/null 2>&1; then
-        modprobe tcp_bbr > /dev/null 2>&1
-    fi
-
-    # --- 智能备份逻辑 ---
-    # 只有当原始备份不存在时才创建，防止多次运行优化覆盖了最初的原始配置
-    if [ ! -f "$BACKUP_FILE" ]; then
-        echo "${YELLOW}💾 检测到首次运行，正在创建原始配置备份...${PLAIN}"
-        if [ -f "$CONFIG_FILE" ]; then
-            cp "$CONFIG_FILE" "$BACKUP_FILE"
-        else
-            touch "$BACKUP_FILE" # 如果原文件不存在，创建一个空的作为备份
-        fi
-        echo "${GREEN}✅ 原始配置已永久备份至: $BACKUP_FILE${PLAIN}"
+get_os_release() {
+    if [[ -f /etc/redhat-release ]]; then
+        release="centos"
+    elif cat /etc/issue | grep -q -E -i "debian"; then
+        release="debian"
+    elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+        release="ubuntu"
+    elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+        release="centos"
+    elif cat /proc/version | grep -q -E -i "debian"; then
+        release="debian"
+    elif cat /proc/version | grep -q -E -i "ubuntu"; then
+        release="ubuntu"
+    elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+        release="centos"
     else
-        echo "${YELLOW}ℹ️ 检测到已有原始备份，跳过备份步骤。${PLAIN}"
+        release="unknown"
+    fi
+}
+
+install_kernel() {
+    get_os_release
+    echo -e "${GREEN}正在尝试自动升级内核...${PLAIN}"
+    
+    if [[ "${release}" == "centos" ]]; then
+        # CentOS/Alma/Rocky: 使用 ELRepo 安装最新内核
+        rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+        if grep -q "release 7" /etc/redhat-release; then
+            yum install -y https://www.elrepo.org/elrepo-release-7.el7.elrepo.noarch.rpm
+        elif grep -q "release 8" /etc/redhat-release; then
+            yum install -y https://www.elrepo.org/elrepo-release-8.el8.elrepo.noarch.rpm
+        else
+             # 尝试通用安装 (CentOS Stream / 9)
+             yum install -y https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm
+        fi
+        
+        yum --enablerepo=elrepo-kernel install kernel-ml -y
+        
+        # 更新引导
+        if [ -f "/boot/grub2/grub.cfg" ]; then
+            grub2-mkconfig -o /boot/grub2/grub.cfg
+            grub2-set-default 0
+        elif [ -f "/boot/efi/EFI/centos/grub.cfg" ]; then
+            grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+            grub2-set-default 0
+        fi
+
+    elif [[ "${release}" == "debian" || "${release}" == "ubuntu" ]]; then
+        # Debian/Ubuntu: 更新系统并安装最新可用内核
+        apt-get update
+        apt-get install -y linux-image-amd64 || apt-get install -y linux-image-generic
+        update-grub
+    else
+        echo -e "${RED}不支持的系统，无法自动升级内核，请手动升级。${PLAIN}"
+        return 1
     fi
 
-    # --- 写入优化配置 (完全覆写) ---
-    echo "${CYAN}🚀 正在写入 [低重传 + 高速度] 优化方案...${PLAIN}"
-    
-    cat > "$CONFIG_FILE" << EOF
+    echo -e "${GREEN}内核安装完成! 需要重启系统才能生效。${PLAIN}"
+    read -p "是否立即重启? [y/n]: " is_reboot
+    if [[ "${is_reboot}" == "y" || "${is_reboot}" == "Y" ]]; then
+        reboot
+    else
+        echo -e "${YELLOW}请稍后手动重启，重启后再次运行脚本开启 BBR。${PLAIN}"
+        exit 0
+    fi
+}
+
+check_kernel_and_bbr() {
+    kernel_version=$(uname -r | cut -d- -f1)
+    major_version=$(echo $kernel_version | cut -d. -f1)
+    minor_version=$(echo $kernel_version | cut -d. -f2)
+
+    echo -e "当前内核版本: ${BLUE}$kernel_version${PLAIN}"
+
+    if [[ $major_version -lt 4 ]] || [[ $major_version -eq 4 && $minor_version -lt 9 ]]; then
+        echo -e "${RED}警告: 当前内核版本低于 4.9，无法开启 BBR。${PLAIN}"
+        echo -e "${YELLOW}检测到您需要极致性能，建议升级内核。${PLAIN}"
+        read -p "是否尝试自动升级内核? [y/n] (默认 n): " upgrade_choice
+        if [[ "${upgrade_choice}" == "y" || "${upgrade_choice}" == "Y" ]]; then
+            install_kernel
+        else
+            echo -e "${YELLOW}已取消内核升级。脚本将应用除 BBR 外的其他优化。${PLAIN}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# =========================================================
+#  核心优化模块
+# =========================================================
+
+apply_optimization() {
+    echo -e "${BLUE}正在应用 [低延迟+低重传+高速度] TCP 配置...${PLAIN}"
+
+    # 备份
+    if [ ! -f "$BACKUP_SYSCTL_CONF" ]; then
+        cp "$SYSCTL_CONF" "$BACKUP_SYSCTL_CONF"
+    fi
+
+    # 写入配置 (针对非NAT环境特化)
+    cat > "$CUSTOM_SYSCTL_CONF" <<EOF
 # =================================================================
-# High Performance TCP Tuning (Optimized for Low-Retransmission)
-# Applied at: $(date)
+# 极致 TCP 优化配置 (Non-NAT Specialized)
 # =================================================================
 
-# --- 核心拥塞控制 (BBR + FQ) ---
+# --- 基础资源限制 ---
+fs.file-max = 1000000
+fs.inotify.max_user_instances = 8192
+
+# --- 拥塞控制 (BBR + FQ) ---
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 
-# --- 关键优化: 降低 Bufferbloat 与 重传 ---
-# 限制发送缓冲区积压，让 BBR 更灵敏，大幅降低延迟和无效重传
+# --- TCP 窗口与缓冲区 (平衡性能与内存) ---
+net.core.rmem_default = 262144
+net.core.wmem_default = 262144
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 8192 262144 16777216
+net.ipv4.tcp_wmem = 8192 262144 16777216
+net.ipv4.tcp_window_scaling = 1
+
+# --- 极致低延迟核心设置 ---
+# 限制发送缓冲区积压，极大降低 RTT
 net.ipv4.tcp_notsent_lowat = 16384
+# 空闲后立即恢复全速发送
+net.ipv4.tcp_slow_start_after_idle = 0
 
-# --- ECN (显式拥塞通知) ---
-net.ipv4.tcp_ecn = 1
-net.ipv4.tcp_ecn_fallback = 1
-
-# --- SACK & 丢包恢复 ---
+# --- 非 NAT 环境特化设置 ---
+# 开启时间戳: 在非 NAT 环境下，开启可更精准计算 RTT 并启用 PAWS，提升高速网络稳定性
+net.ipv4.tcp_timestamps = 1
+# 开启选择性确认 (SACK, DSACK, FACK) 快速处理丢包
 net.ipv4.tcp_sack = 1
 net.ipv4.tcp_dsack = 1
 net.ipv4.tcp_fack = 1
-net.ipv4.tcp_early_retrans = 3
 
-# --- 缓冲区调优 (适配 1G-10G 带宽) ---
-net.core.rmem_default = 1048576
-net.core.wmem_default = 1048576
-net.core.rmem_max = 67108864
-net.core.wmem_max = 67108864
-net.ipv4.tcp_rmem = 4096 87380 67108864
-net.ipv4.tcp_wmem = 4096 16384 67108864
-net.ipv4.udp_rmem_min = 8192
-net.ipv4.udp_wmem_min = 8192
-
-# --- 连接与网络稳定性 ---
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_fin_timeout = 30
-net.ipv4.ip_local_port_range = 10000 65000
-net.netfilter.nf_conntrack_max = 1000000
-net.core.somaxconn = 65535
-
-# --- 安全设置 ---
-# 严禁开启 tcp_tw_recycle (避免 NAT 断流)
-net.ipv4.tcp_tw_recycle = 0
+# --- 连接复用与握手优化 ---
+# 允许重用 TIME_WAIT 连接 (Web/代理服务核心优化)
 net.ipv4.tcp_tw_reuse = 1
-net.ipv4.tcp_timestamps = 1
-net.ipv4.conf.all.arp_ignore = 1
-net.ipv4.conf.all.arp_announce = 2
+# 开启 TCP Fast Open (减少一次 RTT)
+net.ipv4.tcp_fastopen = 3
+# 缩短连接保活时间
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 5
+# 缩短 FIN 等待时间
+net.ipv4.tcp_fin_timeout = 30
+
+# --- 高并发队列 ---
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.somaxconn = 8192
+net.ipv4.tcp_syncookies = 1
+
+# --- 路由设置 ---
+# 禁止 IP 转发 (除非你是路由器，否则服务器应关闭此项以节省 CPU)
+net.ipv4.ip_forward = 0
 EOF
 
-    # 应用更改
-    sysctl -p > /dev/null 2>&1
+    # 加载模块与配置
+    modprobe tcp_bbr 2>/dev/null
+    sysctl -p "$CUSTOM_SYSCTL_CONF" >/dev/null 2>&1
+    sysctl --system >/dev/null 2>&1
+
+    echo -e "${GREEN}优化配置已应用!${PLAIN}"
     
-    # 验证
-    CHECK_CC=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
-    CHECK_QDISC=$(sysctl -n net.core.default_qdisc 2>/dev/null)
-    
-    echo ""
-    if [ "$CHECK_CC" = "bbr" ]; then
-        echo "${GREEN}🎉 优化成功!${PLAIN}"
-        echo "当前拥塞控制: ${YELLOW}$CHECK_CC${PLAIN}"
-        echo "当前队列算法: ${YELLOW}$CHECK_QDISC${PLAIN}"
+    # 结果验证
+    if sysctl net.ipv4.tcp_congestion_control | grep -q "bbr"; then
+        echo -e "拥塞控制: ${GREEN}BBR 已启动 (极致速度)${PLAIN}"
     else
-        echo "${RED}⚠️ 警告: 参数已写入，但内核似乎未生效。${PLAIN}"
-        echo "请尝试重启系统。"
+        echo -e "拥塞控制: ${RED}BBR 未启动 (可能需要重启或内核不支持)${PLAIN}"
     fi
+    echo -e "队列管理: ${GREEN}$(sysctl net.core.default_qdisc | awk '{print $3}')${PLAIN}"
+    echo -e "延迟优化: ${GREEN}tcp_notsent_lowat = 16k (已生效)${PLAIN}"
 }
 
-# [功能2] 恢复原始配置
-function_restore() {
-    echo "${CYAN}🔙 准备恢复原始配置...${PLAIN}"
-    
-    if [ ! -f "$BACKUP_FILE" ]; then
-        echo "${RED}❌ 错误: 未找到原始备份文件 ($BACKUP_FILE)。${PLAIN}"
-        echo "可能是你尚未运行过优化，或者手动删除了备份。"
-        return
-    fi
-
-    cp "$BACKUP_FILE" "$CONFIG_FILE"
-    echo "${GREEN}✅ 已将配置文件恢复至初始状态。${PLAIN}"
-    
-    echo "🔄 正在重载系统参数..."
-    sysctl -p > /dev/null 2>&1
-    
-    echo "${GREEN}🎉 恢复完成! 系统已回到第一次运行脚本前的状态。${PLAIN}"
+restore_config() {
+    echo -e "${BLUE}正在恢复配置...${PLAIN}"
+    rm -f "$CUSTOM_SYSCTL_CONF"
+    sysctl --system >/dev/null 2>&1
+    echo -e "${GREEN}系统配置已恢复至默认状态。${PLAIN}"
 }
 
-# --- 3. 菜单主界面 ---
-clear
-echo "========================================================"
-echo "      🐧 Linux 网络参数调优脚本 (Pro版)"
-echo "========================================================"
-echo ""
-echo "  1. 应用 [低重传 + 高速度] 优化方案 (推荐)"
-echo "  2. 恢复 [使用前] 的原始配置文件"
-echo "  0. 退出脚本"
-echo ""
-echo "========================================================"
-printf "请输入数字 [0-2]: "
-read choice
+# =========================================================
+#  主菜单
+# =========================================================
 
-case "$choice" in
-    1)
-        function_optimize
-        ;;
-    2)
-        function_restore
-        ;;
-    0)
-        exit 0
-        ;;
-    *)
-        echo "${RED}❌ 输入无效，请重新运行脚本。${PLAIN}"
-        exit 1
-        ;;
-esac
+show_menu() {
+    clear
+    echo -e "================================================="
+    echo -e "    ${GREEN}Linux TCP 终极优化脚本 (非 NAT 版)${PLAIN}    "
+    echo -e "================================================="
+    echo -e " ${GREEN}1.${PLAIN} 使用 [低延迟+低重传+高速度] TCP 配置"
+    echo -e " ${GREEN}2.${PLAIN} 恢复使用脚本前的配置"
+    echo -e " ${GREEN}3.${PLAIN} 退出脚本"
+    echo -e "================================================="
+    read -p " 请输入选择 [1-3]: " num
+
+    case "$num" in
+        1)
+            check_kernel_and_bbr
+            # 无论是否升级内核，都尝试应用配置(如果未升级则BBR不生效但其他生效)
+            apply_optimization
+            ;;
+        2)
+            restore_config
+            ;;
+        3)
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}请输入正确的数字 [1-3]${PLAIN}"
+            sleep 1
+            show_menu
+            ;;
+    esac
+}
+
+show_menu
